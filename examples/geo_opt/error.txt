@@ -1,0 +1,30 @@
+/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/physics/filling.py:384: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matricesor `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at  /croot/pytorch_1675190298929/work/aten/src/ATen/native/TensorShape.cpp:2981.)
+  occupations_cs = occupations.cumsum(-1).T - n_electrons
+/home/jonmue/micromamba/envs/tbmalt/lib/python3.9/site-packages/torch/autograd/__init__.py:173: UserWarning: Error detected in CdistBackward0. Traceback of forward call that caused the error:
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/examples/geo_opt/geo_opt.py", line 68, in <module>
+    loss = dftb_calculator(geometry, orbs)
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/ml/module.py", line 86, in __call__
+    return self.forward(cache=cache, **kwargs)
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/physics/dftb/__init__.py", line 730, in forward
+    self.overlap, self.core_hamiltonian, self.invr, self.gamma
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/physics/dftb/__init__.py", line 681, in gamma
+    self._gamma = build_gamma_matrix(
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/physics/dftb/gamma.py", line 570, in build_gamma_matrix
+    return gamma_exponential(geometry, orbs, hubbard_Us)
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/physics/dftb/gamma.py", line 52, in gamma_exponential
+    r = geometry.distances
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/tbmalt/structures/geometry.py", line 274, in distances
+    dist = torch.cdist(self.positions, self.positions, p=2)
+  File "/home/jonmue/micromamba/envs/tbmalt/lib/python3.9/site-packages/torch/functional.py", line 1183, in cdist
+    return _VF.cdist(x1, x2, p, None)  # type: ignore[attr-defined]
+ (Triggered internally at  /croot/pytorch_1675190298929/work/torch/csrc/autograd/python_anomaly_mode.cpp:102.)
+  Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+Traceback (most recent call last):
+  File "/home/jonmue/tbmalt/calculator_bug/tbmalt/examples/geo_opt/geo_opt.py", line 72, in <module>
+    loss.backward()
+  File "/home/jonmue/micromamba/envs/tbmalt/lib/python3.9/site-packages/torch/_tensor.py", line 396, in backward
+    torch.autograd.backward(self, gradient, retain_graph, create_graph, inputs=inputs)
+  File "/home/jonmue/micromamba/envs/tbmalt/lib/python3.9/site-packages/torch/autograd/__init__.py", line 173, in backward
+    Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+RuntimeError: one of the variables needed for gradient computation has been modified by an inplace operation: [torch.DoubleTensor [2, 2]], which is output 0 of CdistBackward0, is at version 1; expected version 0 instead. Hint: the backtrace further above shows the operation that failed to compute its gradient. The variable in question was changed in there or anywhere later. Good luck!
+
