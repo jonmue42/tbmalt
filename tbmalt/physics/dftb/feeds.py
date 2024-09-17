@@ -644,6 +644,8 @@ class SkFeed(IntegralFeed):
                 if self.interpolation is BicubInterp:
                     inte = self.off_sites[(z_1, z_2, i, j)](cr, dist)
                 else:
+                    print("OFF SITES")
+                    print(self.off_sites)
                     inte = self.off_sites[(z_1, z_2, i, j)](dist)
 
                 # Apply the Slater-Koster transformation
@@ -837,7 +839,12 @@ class SkFeed(IntegralFeed):
 
         # Identify which are on-site blocks and which are off-site
         on_site = self._partition_blocks(atomic_idx_1, atomic_idx_2)
+        print(int(z_1))
+        print(z_1)
+        print(self.on_sites)
+        print('-------------------')
         mask_shell = torch.zeros_like(self.on_sites[int(z_1)]).bool()
+        #mask_shell = torch.zeros_like(self.on_sites[z_1]).bool()
         mask_shell[:(torch.arange(len(orbs.shell_dict[int(z_1)]))
                      * 2 + 1).sum()] = True
 
@@ -980,6 +987,9 @@ class SkFeed(IntegralFeed):
         # The species list must be sorted to ensure that the lowest atomic
         # number comes first in the species pair.
         for pair in combinations_with_replacement(sorted(species), 2):
+            #From here the errors for the on-site and off-site originate from
+            #Uncommenting the following will fix the bug for on-site and off-site
+            #pair = (int(pair[0]), int(pair[1]))
 
             skf = Skf.read(path, pair, device=device) if interpolation is not BicubInterp else\
                 VCRSkf.read(path, pair, device=device)
@@ -1404,6 +1414,11 @@ class RepulsiveSplineFeed(Feed):
         returns:
             Erep: The repulsive energy contribution between the two atoms.
         """
+        print('-------------------ATOMNUM')
+        print(atomnum1)
+        print(atomnum2)
+        print(frozenset((int(atomnum1), int(atomnum2))))
+        print(self.spline_data)
         spline = self.spline_data[frozenset((int(atomnum1), int(atomnum2)))]
         tail_start = spline.grid[-1]
         exp_head_cutoff = spline.grid[0]
@@ -1500,5 +1515,7 @@ class RepulsiveSplineFeed(Feed):
             >>>     Skf.read(file).write('my_skf.hdf5')
         """
         interaction_pairs = combinations_with_replacement(species, r=2)
+        #From here the error seems to originate from.
+        #The interaction_pairs are tensors, but integers are expected.
         return cls({interaction_pair: Skf.read(path, interaction_pair, device=device, dtype=dtype).r_spline for interaction_pair in interaction_pairs})
 

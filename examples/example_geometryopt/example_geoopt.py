@@ -20,18 +20,24 @@ path = database_path
 #ATOM SETUP
 #######
 # species occuring in H2O
-species = torch.tensor([1, 8])
+#species = torch.tensor([1, 8])
+species = torch.tensor([1])
 # relevant shells
-shell_dict = {1: [0], 8: [0, 1]}
+#shell_dict = {1: [0], 8: [0, 1]}
+shell_dict = {1: [0]}
 
 # set up the starting geometry
-H2O = Geometry(torch.tensor([1, 8, 8]),
-               torch.tensor([[0.0, 0.0, 0.0], 
-                             [0.0, 1.0, -0.5], 
-                             [0.0, -1.0, -0.5]], requires_grad=False))
-H2O._positions.requires_grad = True
+#H2O = Geometry(torch.tensor([1, 8, 8]),
+#               torch.tensor([[0.0, 0.0, 0.0], 
+#                             [0.0, 1.0, -0.5], 
+#                             [0.0, -1.0, -0.5]], requires_grad=False))
+#H2O._positions.requires_grad = True
 
-orbital_info = OrbitalInfo(H2O.atomic_numbers, shell_dict, shell_resolved=False)
+H2 = Geometry(torch.tensor([1, 1]),
+              torch.tensor([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], requires_grad=False))
+
+#orbital_info = OrbitalInfo(H2O.atomic_numbers, shell_dict, shell_resolved=False)
+orbital_info = OrbitalInfo(H2.atomic_numbers, shell_dict, shell_resolved=False)
 
 
 ######
@@ -50,18 +56,20 @@ repulsion_feed = RepulsiveSplineFeed.from_database(path, species)
 ######
 # set up the calculator
 ######
-#dftb_calculator = Dftb2(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsion_feed)
-dftb_calculator(H2O, orbital_info)
+dftb_calculator = Dftb2(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsion_feed)
+#dftb_calculator(H2O, orbital_info)
+dftb_calculator(H2, orbital_info)
 
-
-######
-# set hyperparameters
-######
-learning_rate = 0.001
-epochs = 100
-
-optimizer = torch.optim.Adam([H2O._positions], lr=learning_rate)
-
+#
+#
+#######
+## set hyperparameters
+#######
+#learning_rate = 0.001
+#epochs = 100
+#
+#optimizer = torch.optim.Adam([H2O._positions], lr=learning_rate)
+#
 ######
 # training loop
 ######
