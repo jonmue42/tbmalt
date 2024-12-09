@@ -22,6 +22,7 @@ from tbmalt.data.units import energy_units
 from tbmalt import ConvergenceError
 
 from torch import Tensor
+from torchviz import make_dot
 
 # Issues:
 #   - There is an issue with how thins are currently being dealt with; according
@@ -40,9 +41,16 @@ from torch import Tensor
 def implicit(fn, z, *args, **kwargs):
     #create a second graph for derivative calculation regarding the final value
     z_2 = z.detach()
+    print('Z_2')
+    print(z_2)
     z_2.requires_grad = True
     final_detached = fn(z_2, *args, **kwargs)
+    print('Final detached')
+    print(final_detached)
+    #implicit_contrib = torch.autograd.grad(final_detached, z_2, retain_graph = True)[0]
     implicit_contrib = torch.autograd.grad(final_detached, z_2, torch.ones_like(final_detached), retain_graph = True)[0]
+    print('Implicit contribution')
+    print(implicit_contrib)
     final_detached.register_hook(lambda grad: grad/(1-implicit_contrib))
     return final_detached
 
@@ -851,7 +859,479 @@ class Dftb2(Dftb1):
         # auto-grad engine it will allow for gradients to be computed. This two
         # step approach allows for gradients to be computed without having to
         # track them through the full SCC cycle.
+        #self._scc_cycle(q_converged)
+        implicit(self._scc_cycle, q_converged)
+        #q_final = self.mixer(self._scc_cycle(q_current),
+       #                                    q_current)
+        #self.mixer.reset()
+        #q_final = implicit(self.mixer, self._scc_cycle(q_current), q_current)
+
+
+        # Calculate and return the total system energy, taking into account
+        # the entropy term as and when necessary.
+        return self.mermin_energy
+
+    def __cull(self, mask: Tensor):
+        """Cull converged systems from the calculator instance.
+
+        Calling this method will strip a selection of systems from various
+        components of the associated calculator instance. This is intended to
+        be used to temporarily remove converged systems during the SCC cycle.
+        However, as this only filters some, but not all, attributes its ill
+        advised to use this anywhere other than the `.forward` method.
+
+        Arguments:
+            mask: A tensor of Booleans indicating which systems have converged.
+                Systems which have converged will be masked partially out.
+
+        Warnings:
+            Do not invoke this function manually unless you are sure that you
+            know what you are doing!
+        """
+        self._orbs = self.orbs[~mask]
+        self._geometry = self.geometry[~mask]
+        n_orbs = torch.max(self.orbs.n_orbitals)
+        n_res = self.orbs.res_matrix_shape[-1]
+        self._overlap = self._overlap[~mask, :n_orbs, :n_orbs]
+        self._core_hamiltonian = self._core_hamiltonian[~mask, :n_orbs, :n_orbs]
+        self._gamma = self._gamma[~mask, :n_res, :n_res]
+        self._invr = self._invr[~mask, :n_res, :n_res]
+
+    def _scc_cycle(self, q_in: Tensor) -> Tensor:
+        """Perform a single self-consistent charge cycle.
+
+        This method performs a single Self-Consistent Charge cycle (SCC). Using
+        ``q_in`` as the initial guess during the first cycle and as the mixed
+        charges in all subsequent cycles.
+
+        Arguments:
+            q_in: Input charges are provided via the ``q_in`` argument. This
+                can be viewed as the initial guess for the first cycle and as
+                the mixed charges from the previous step in all subsequent
+                cycles.
+
+        Returns:
+            q_out: New updated charges, as computed following the SCC step.
+
+        Notes:
+            It is important to note that this method is intended to modify and
+            update the class and its attributes during the SCC cycle. The newly
+            computed charges are only returned to facilitate ease of use.
+
+            The charges ``q_in`` and ``q_out`` may be either shell or atom
+            resolved, but must match up with that as defined by the orbs
+            attribute `shell_resolved`.
+        """
+
+        # Construct the shift matrix
+        shifts = torch.einsum(
+            '...i,...ij->...j', q_in - self.q_zero_res, self.gamma)
+        shifts = prepeat_interleave(shifts, self.orbs.orbs_per_res)
+        shifts = (shifts[..., None] + shifts[..., None, :])
+
+        # Compute the second order Hamiltonian matrix
+        self._hamiltonian = self.core_hamiltonian + .5 * self.overlap * shifts
+
+        # Obtain the eigen-values/vectors via an eigen decomposition
+        self.eig_values, self.eig_vectors = eighb(
+            self.hamiltonian, self.overlap, **self._solver_settings)
+
+        # Scaled occupancy values
+        s_occs = torch.einsum(
+            '...i,...ji->...ji', torch.sqrt(self.occupancy), self.eig_vectors)
+
+        # Density matrix
+        self.rho = s_occs @ s_occs.transpose(-1, -2).conj()
+
+        # Compute and return the new
+        return _mulliken(self.rho, self.overlap, self.orbs)
+
+    def reset(self):
+        """Reset all attributes and cached properties."""
+        self._overlap = None
+        self._core_hamiltonian = None
+        self._hamiltonian = None
+        self._gamma = None
+        self._invr = None
+        self.converged = None
+
+        self.rho = None
+        self.eig_values = None
+        self.eig_vectors = None
+
+class Dftb2_notimp(Dftb1):
+    """Self-consistent-charge density-functional tight-binding method
+    (SCC-DFTB).
+
+    Arguments:
+        h_feed: this feed provides the Slater-Koster based integrals used to
+            construct Hamiltonian matrix.
+        s_feed: this feed provides the Slater-Koster based integrals used to
+            construct overlap matrix.
+        o_feed: this feed provides the angular-momenta resolved occupancies
+            for the requested species.
+        u_feed: this feed provides the Hubbard-U values as needed to construct
+            the gamma matrix. This must be a `Feed` type object which when
+            provided with a `OrbitalInfo` object returns the Hubbard-U values
+            for the target system.
+        r_feed: this feed describes the repulsive interaction. [DEFAULT: None]
+        filling_temp: Electronic temperature used to calculate Fermi-energy.
+            [DEFAULT: None]
+        max_scc_iter: maximum permitted number of SCC iterations. If one or
+            more system fail to converge within ``max_scc_iter`` cycles then a
+            convergence error will be raise; unless the ``suppress_SCF_error``
+            flag has been set. [DEFAULT=200]
+        mixer: specifies the charge mixing scheme to be used. Providing the
+            strings "simple" and "anderson" will result in their respectively
+            named mixing schemes being used. Initialised `Mixer` class objects
+            may also be provided directly.
+
+    Keyword Arguments:
+        suppress_SCF_error: if True, convergence errors will be suppressed and
+            the calculation will proceed with as normal. This is of use during
+            fitting when operating on large batches. This way if most systems
+            converge but one does not then it can just be ignored rather than
+            ending the program. Unconverged systems can be identified via the
+            ``converged`` attribute. [DEFAULT=False]
+        gamma_scheme: scheme used to construct the gamma matrix. This may be
+            either "exponential" or "gaussian". [DEFAULT="exponential"]
+        coulomb_scheme: scheme used to construct the coulomb matrix. This may
+            be either "search" or "experience". [DEFAULT="search"]
+
+    Attributes:
+        overlap: overlap matrix as constructed by the supplied `s_feed`.
+        core_hamiltonian: first order core Hamiltonian matrix as built by the
+            `h_feed` entity.
+        gamma: the gamma matrix, this is constructed via the specified scheme
+            and uses the Hubbard-U values produced by the `u_feed`.
+        invr: the 1/R matrix.
+        hamiltonian: second order Hamiltonian matrix as produced via the SCC
+            cycle.
+        converged: a tensor of booleans indicating which systems have and
+            have not converged (True if converged). This can be used during
+            training, along side `suppress_SCF_error`, to allow unconverged
+            systems to be omitted from the final loss calculation; as so to
+            prevent introducing unnecessary instabilities.
+        mixer: a `Mixer` type class instance used during the SCC cycle to
+            perform charge mixing.
+
+    Examples:
+        >>> from tbmalt import OrbitalInfo, Geometry
+        >>> from tbmalt.physics.dftb.feeds import ScipySkFeed,\
+            SkfOccupationFeed, HubbardFeed
+        >>> from tbmalt.physics.dftb import Dftb2
+        >>> from tbmalt.io.skf import Skf
+        >>> from ase.build import molecule
+        >>> import urllib
+        >>> import tarfile
+        >>> from os.path import join
+        >>> torch.set_default_dtype(torch.float64)
+
+        # Link to the auorg-1-1 parameter set
+        >>> link = \
+        'https://dftb.org/fileadmin/DFTB/public/slako/auorg/auorg-1-1.tar.xz'
+
+        # Preparation of sk file
+        >>> elements = ['H', 'C', 'O', 'Au', 'S']
+        >>> tmpdir = './'
+        >>> urllib.request.urlretrieve(
+                link, path := join(tmpdir, 'auorg-1-1.tar.xz'))
+        >>> with tarfile.open(path) as tar:
+                tar.extractall(tmpdir)
+        >>> skf_files = [join(tmpdir, 'auorg-1-1', f'{i}-{j}.skf')
+                         for i in elements for j in elements]
+        >>> for skf_file in skf_files:
+                Skf.read(skf_file).write(path := join(tmpdir, 'auorg.hdf5'))
+
+        # Preparation of system to calculate
+        # Single system
+        >>> geos = Geometry.from_ase_atoms(molecule('CH4'))
+        >>> orbs_s = OrbitalInfo(geos.atomic_numbers, shell_dict={1: [0], 6: [0, 1]})
+        # Batch systems
+        >>> geob = Geometry.from_ase_atoms([molecule('H2O'), molecule('CH4')])
+        >>> orbs_b = OrbitalInfo(geob.atomic_numbers, shell_dict={1: [0], 6: [0, 1],
+                                                            8: [0, 1]})
+        # Single system with pbc
+        >>> geop = Geometry(
+                torch.tensor([6, 1, 1, 1, 1]),
+                torch.tensor([[3.0, 3.0, 3.0],
+                              [3.6, 3.6, 3.6],
+                              [2.4, 3.6, 3.6],
+                              [3.6, 2.4, 3.6],
+                              [3.6, 3.6, 2.4]]),
+                torch.tensor([[4.0, 4.0, 0.0],
+                              [5.0, 0.0, 5.0],
+                              [0.0, 6.0, 6.0]]),
+                units='a', cutoff=torch.tensor([9.98]))
+        >>> orbs_p = OrbitalInfo(geop.atomic_numbers, shell_dict={1: [0], 6: [0, 1]})
+
+
+        # Definition of feeds
+        >>> h_feed = ScipySkFeed.from_database(path, [1, 6, 8], 'hamiltonian')
+        >>> s_feed = ScipySkFeed.from_database(path, [1, 6, 8], 'overlap')
+        >>> o_feed = SkfOccupationFeed.from_database(path, [1, 6, 8])
+        >>> u_feed = HubbardFeed.from_database(path, [1, 6, 8])
+
+        # Run DFTB2 calculation
+        >>> mix_params = {'mix_param': 0.2, 'init_mix_param': 0.2,
+                          'generations': 3, 'tolerance': 1e-10}
+        >>> dftb2 = Dftb2(h_feed, s_feed, o_feed, u_feed,
+                          filling_temp=0.0036749324, mix_params=mix_params)
+        >>> _ = dftb2(geos, orbs_s)
+        >>> getattr(dftb2, 'q_final_atomic')
+        tensor([4.3054, 0.9237, 0.9237, 0.9237, 0.9237])
+        >>> _ = dftb2(geob, orbs_b)
+        >>> getattr(dftb2, 'q_final_atomic')
+        tensor([[6.5856, 0.7072, 0.7072, 0.0000, 0.0000],
+                [4.3054, 0.9237, 0.9237, 0.9237, 0.9237]])
+        >>> _ = dftb2(geop, orbs_p)
+        >>> getattr(dftb2, 'q_final_atomic')
+        tensor([4.6124, 0.8332, 0.8527, 0.8518, 0.8499])
+
+    """
+
+    def __init__(
+            self, h_feed: IntegralFeed, s_feed: IntegralFeed, o_feed: Feed,
+            u_feed: Feed, r_feed: Optional[Feed] = None,
+            max_scc_iter: int = 200,
+            mixer: Union[_Mixer, Literal['anderson', 'simple']] = 'anderson',
+            **kwargs):
+
+        super().__init__(
+            h_feed, s_feed, o_feed, r_feed=r_feed, **kwargs)
+
+        # DFTB2 specific calculator feeds
+        self.u_feed = u_feed
+
+        self._core_hamiltonian: Optional[Tensor] = None
+        self._gamma: Optional[Tensor] = None
+        self._invr: Optional[Tensor] = None
+        self.converged: Optional[Tensor] = None
+
+        # Calculator Settings
+        self.max_scc_iter = max_scc_iter
+        self.suppress_SCF_error = kwargs.get('supress_SCF_error', False)
+        self.gamma_scheme = kwargs.get('gamma_scheme', 'exponential')
+        self.coulomb_scheme = kwargs.get('coulomb_scheme', 'search')
+
+        # If no pre-initialised was provided then construct one.
+        if isinstance(mixer, str):
+            mixer = {
+                'anderson': Anderson, 'simple': Simple}[
+                mixer.lower()](False, **kwargs.get('mix_params', {}))
+
+        self.mixer = mixer
+
+    @property
+    def hamiltonian(self):
+        """Second order Hamiltonian matrix as produced via the SCC cycle"""
+        return self._hamiltonian
+
+    @hamiltonian.setter
+    def hamiltonian(self, value):
+        self._hamiltonian = value
+
+    @property
+    def core_hamiltonian(self):
+        """First order core Hamiltonian matrix as built by the `h_feed`
+        entity"""
+        if self._core_hamiltonian is None:
+            self._core_hamiltonian = self.h_feed.matrix_from_calculator(self)
+
+
+        return self._core_hamiltonian
+
+    @core_hamiltonian.setter
+    def core_hamiltonian(self, value):
+        self._core_hamiltonian = value
+
+    @property
+    def invr(self):
+        """1/R matrix"""
+        if self._invr is None:
+            if self.geometry.periodicity is not None:
+                self._invr = build_coulomb_matrix(self.geometry,
+                                                  method=self.coulomb_scheme)
+            else:
+                r = self.geometry.distances
+                r[r != 0.0] = 1.0 / r[r != 0.0]
+                self._invr = r
+
+        return self._invr
+
+    @invr.setter
+    def invr(self, value):
+        self._invr = value
+
+    @property
+    def gamma(self):
+        """Gamma matrix as constructed using the `u_feed`"""
+        if self._gamma is None:
+            self._gamma = build_gamma_matrix(
+                self.geometry, self.orbs, self.invr,
+                self.u_feed(self.orbs), self.gamma_scheme)
+        return self._gamma
+
+    @gamma.setter
+    def gamma(self, value):
+        self._gamma = value
+
+    def forward(self, cache: Optional[Dict[str, Any]] = None
+                , **kwargs) -> Tensor:
+        """Execute the SCC-DFTB calculation.
+
+        Invoking this will trigger the execution of the self-consistent-charge
+        density functional tight binding theory calculation.
+
+        Arguments:
+            cache: This stores any information which can be used to boot-strap
+                the calculation. Currently supported values are:
+
+                    - "q_initial": initial starting guess for the SCC cycle.
+
+        Returns:
+            total_energy: total energy for the target systems this will include
+                both the repulsive and entropy terms, where appropriate.
+
+        """
+        # Step 1: Initialisation
+
+        # Reset the mixer and inform it whether it will be operating on a batch.
+        # This must be explicitly defined each time as it cannot be inferred
+        # from context.
+        self.mixer.reset()
+        self.mixer._is_batch = self.is_batch
+
+        # Set the initial starting guess for the charges.
+        q_current = self.q_zero_res
+        if cache is not None:
+            q_current = cache.get('q_initial', q_current)
+
+        # Array in which the final converged charges of each system are stored.
+        # Results are assigned to `q_converged` as systems coverage during the
+        # initial non-gradient-tracked SCC cycle. The values are then used as
+        # the "initial guesses" for the final single shot SCC cycle which takes
+        # place within the graph to reconnect the gradients.
+        q_converged = torch.zeros_like(q_current)
+
+        # Calls are made to the various cached properties to ensure that they
+        # are constructed within the purview of the graph.
+        self.overlap, self.core_hamiltonian, self.invr, self.gamma
+
+        # Step 2: Preliminary SCC cycle
+        # A preliminary SCC cycle is performed outside of the gradient and acts
+        # only to get the converged charges to be used in the second cycle.
+        #with torch.no_grad():
+
+# Non-batch systems are treated separately for the sake of clarity
+# as special treatment is required for the batch case.
+        if not self.is_batch:
+            # Begin the SCC cycle
+            for step in range(1, self.max_scc_iter + 1):
+        
+                # Perform a single SCC step and apply the mixing algorithm.
+                q_current = self.mixer(self._scc_cycle(q_current),
+                                       q_current)
+        
+                # If the system has converged then assign the `q_converged`
+                # values and break out of the SCC cycle.
+                if self.mixer.converged:
+                    q_converged[:] = q_current[:]
+                    self.converged = torch.tensor(True)
+                    break
+        
+            # If the maximum permitted number of iterations is exceeded then
+            # then raise an exception; unless explicitly instructed not to.
+            else:
+                self.converged = torch.tensor(False)
+                if not self.suppress_SCF_error:
+                    raise ConvergenceError(
+                        "SCC cycle failed to converge; "
+                        "iteration limit reached")
+        
+        else:
+            # For the batch case, systems will be culled as and when they
+            # converge. This process involves modifying attributes such as
+            # `geometry`, `orbs`, `overlap`, etc. Doing so allows all the
+            # existing code within the methods and properties to be used.
+            # However, this requires that copies of the original objects
+            # are saved and restored at the end of the batch SCC cycle.
+            # Note that a copy of the second order hamiltonian matrix is not
+            # required as it is regenerated in full in the second SCC cycle.
+            c_geometry, c_orbs = self.geometry, self.orbs
+            c_overlap, c_gamma = self.overlap, self.gamma
+            c_invr, c_hamiltonian_copy = self.invr, self.core_hamiltonian
+        
+            # Todo:
+            #  Implement a method that can identify which properties do and
+            #  do not need to be fully destroyed by __restore.
+        
+            # `system_indices` provides the indices of each system and is
+            # culled along with the other arrays so that one can identify
+            # which systems remain.
+            system_indices = torch.arange(self.geometry._n_batch, device=self.device)
+        
+            # Used to help the user track which systems have converged.
+            self.converged = torch.full(system_indices.shape, False, device=self.device)
+        
+            for step in range(1, self.max_scc_iter + 1):
+                q_current = self.mixer(self._scc_cycle(q_current),
+                                       q_current)
+        
+                if (c_mask := self.mixer.converged).any():
+        
+                    idxs = system_indices[c_mask]
+                    q_converged[idxs, :q_current.shape[-1]] = q_current[
+                        c_mask, :]
+                    self.converged[idxs] = True
+        
+                    # If all systems have converged then the end of the SCC
+                    # cycle has been reached.
+                    if torch.all(c_mask):
+                        break
+                    # Otherwise there are still systems left to converge.
+                    # Thus, the converged systems will now be culled to avoid
+                    # over-converging them.
+                    else:
+                        # The order in which things are done here matters
+                        # Cull calculator attributes
+                        self.__cull(c_mask)
+                        # Cull local variables
+                        n_res = self.orbs.res_matrix_shape[-1]
+                        system_indices = system_indices[~c_mask]
+                        q_current = q_current[~c_mask, :n_res]
+                        # Cull mixer
+                        self.mixer.cull(c_mask, new_size=[n_res])
+        
+            else:
+                self.converged = torch.tensor(False)
+                if not self.suppress_SCF_error:
+                    # Here a restore is performed before the error being
+                    # raised to help with debugging.
+                    self._geometry, self._orbs = c_geometry, c_orbs
+                    self.overlap, self.gamma = c_overlap, c_gamma
+                    self.invr, self.core_hamiltonian = c_invr,\
+                        c_hamiltonian_copy
+        
+                    raise ConvergenceError(
+                        "SCC cycle failed to converge; "
+                        "iteration limit reached", self.converged)
+        
+            # Restore the calculator back to its state prior to culling.
+            # Properties like `rho` and `eig_values` are not reset as it is
+            # assumed that they will be overridden in the next stage.
+            self._geometry, self._orbs = c_geometry, c_orbs
+            self.overlap, self.gamma = c_overlap, c_gamma
+            self.invr, self.core_hamiltonian = c_invr, c_hamiltonian_copy
+
+        # Step 3: Final SCC cycle
+        # A single shot SCC cycle is now performed using the converged charges
+        # as the initial starting guess. As this is done within view of the
+        # auto-grad engine it will allow for gradients to be computed. This two
+        # step approach allows for gradients to be computed without having to
+        # track them through the full SCC cycle.
         self._scc_cycle(q_converged)
+        #implicit(self._scc_cycle, q_converged)
 
         # Calculate and return the total system energy, taking into account
         # the entropy term as and when necessary.
