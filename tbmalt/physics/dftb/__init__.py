@@ -36,6 +36,16 @@ from torch import Tensor
 #   - Do we really want q_zero, q_final, etc to be the number of electrons or
 #     the charge?
 
+#Method to calculate gradients of function call using implicit function theorem
+def implicit(fn, z, *args, **kwargs):
+    #create a second graph for derivative calculation regarding the final value
+    z_2 = z.detach()
+    z_2.requires_grad = True
+    final_detached = fn(z_2, *args, **kwargs)
+    implicit_contrib = torch.autograd.grad(final_detached, z_2, torch.ones_like(final_detached), retain_graph = True)[0]
+    final_detached.register_hook(lambda grad: grad/(1-implicit_contrib))
+    return final_detached
+
 # This method really could benefit from a refactoring. It should be more
 # clear in its intent and operation. This function will be made private
 # until it is cleared up.
