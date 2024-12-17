@@ -37,8 +37,14 @@ from torchviz import make_dot
 #   - Do we really want q_zero, q_final, etc to be the number of electrons or
 #     the charge?
 
+def finite_diff(fn, z, delta=1E-6):
+    finite_diff_result = (fn(z + delta) - fn(z - delta))/(2*delta)
+    return finite_diff
+
 #Method to calculate gradients of function call using implicit function theorem
 def implicit(fn, z, *args, **kwargs):
+    finite_diff_res = finite_diff(fn, z)
+    print(finite_diff_res)
     #create a second graph for derivative calculation regarding the final value
     z_2 = z.detach()
     print('Z_2')
@@ -50,8 +56,10 @@ def implicit(fn, z, *args, **kwargs):
     #implicit_contrib = torch.autograd.grad(final_detached, z_2, retain_graph = True)[0]
     implicit_contrib = torch.autograd.grad(final_detached, z_2, torch.ones_like(final_detached), retain_graph = True)[0]
     print('Implicit contribution')
+    implicit_contrib = torch.tensor([-0.4364792491884373,  0.2182396235950179,  0.2182396217076388])
     print(implicit_contrib)
     final_detached.register_hook(lambda grad: grad/(1-implicit_contrib))
+    final_detached.register_hook(lambda grad: print("Grad in hook:", grad))
     return final_detached
 
 # This method really could benefit from a refactoring. It should be more
@@ -860,7 +868,8 @@ class Dftb2(Dftb1):
         # step approach allows for gradients to be computed without having to
         # track them through the full SCC cycle.
         #self._scc_cycle(q_converged)
-        implicit(self._scc_cycle, q_converged)
+        q_final = implicit(self._scc_cycle, q_converged)
+        self._scc_cycle(q_final)
         #q_final = self.mixer(self._scc_cycle(q_current),
        #                                    q_current)
         #self.mixer.reset()
@@ -922,6 +931,15 @@ class Dftb2(Dftb1):
             resolved, but must match up with that as defined by the orbs
             attribute `shell_resolved`.
         """
+        #print('Values from SCC cycle\n')
+        #print('q_in', q_in)
+        #print('core_hamiltonian', self.core_hamiltonian)
+        #print('overlap', self.overlap)
+        #print('q_zero_res', self.q_zero_res)
+        #print('gamma', self.gamma)
+        #print('orbs_per_res', self.orbs.orbs_per_res)
+        #print('_solver_settings', self._solver_settings)
+        #print('orbs', self.orbs)
 
         # Construct the shift matrix
         shifts = torch.einsum(
@@ -932,10 +950,13 @@ class Dftb2(Dftb1):
         # Compute the second order Hamiltonian matrix
         self._hamiltonian = self.core_hamiltonian + .5 * self.overlap * shifts
 
+        #print('hamiltonian', self.hamiltonian)
         # Obtain the eigen-values/vectors via an eigen decomposition
         self.eig_values, self.eig_vectors = eighb(
             self.hamiltonian, self.overlap, **self._solver_settings)
+        
 
+        #print('occupancy', self.occupancy)
         # Scaled occupancy values
         s_occs = torch.einsum(
             '...i,...ji->...ji', torch.sqrt(self.occupancy), self.eig_vectors)

@@ -138,8 +138,8 @@ print('Repulsive energy not imp:', dftb_calculator_notimp.repulsive_energy)
 # Calculate the gradient
 start_time = time.time()
 gradient = torch.autograd.grad(total_energy, H2O.positions, grad_outputs=torch.ones_like(total_energy))[0]
+gradient_notimp = torch.autograd.grad(total_energy_notimp, H2O.positions, grad_outputs=torch.ones_like(total_energy_notimp))[0]
 #(gradient,) = torch.autograd.grad(total_energy, H2O.positions)#, #retain_graph=True)
-(gradient_notimp,) = torch.autograd.grad(total_energy_notimp, H2O.positions, retain_graph=True)
 print(H2O.positions)
 forces = -gradient
 forces_notimp = -gradient_notimp

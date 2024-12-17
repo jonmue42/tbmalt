@@ -1,0 +1,94 @@
+import torch
+import torch.nn as nn
+from torchviz import make_dot
+
+torch.set_default_dtype(torch.float64)
+torch.set_printoptions(precision=16)
+
+tolerance = 1e-15
+
+class PointLayer_grad(nn.Module):
+    def __init__(self, out_features, tol = tolerance, max_iter = 50):
+        super().__init__()
+        #self.linear = nn.Linear(out_features, out_features, bias=False)
+        self.tol = tol
+        self.max_iter = max_iter
+
+    def forward(self, x):
+        #print('Beginning forward')
+        #print(x)
+        z = torch.zeros_like(x)
+        #print(z)
+        self.iterations = 0
+
+        while self.iterations < self.max_iter:
+            z_next = torch.sqrt(z + x)
+            g = z - z_next
+            self.err = torch.norm(g)
+            if self.err < self.tol:
+                break
+            z = z_next
+            self.iterations += 1
+        
+        z = torch.sqrt(z + x)
+        #z.register_hook(lambda grad : 1)
+        return z
+
+
+class PointLayer_nograd(nn.Module):
+    def __init__(self, out_features, tol = tolerance, max_iter = 50):
+        super().__init__()
+        #self.linear = nn.Linear(out_features, out_features, bias=False)
+        self.tol = tol
+        self.max_iter = max_iter
+
+    def forward(self, x):
+        #print('Beginning forward')
+        #print(x)
+        z = torch.zeros_like(x)
+        #print(z)
+        self.iterations = 0
+
+        with torch.no_grad():
+            while self.iterations < self.max_iter:
+                z_next = torch.sqrt(z + x)
+                g = z - z_next
+                self.err = torch.norm(g)
+                if self.err < self.tol:
+                    break
+                z = z_next
+                self.iterations += 1
+
+        z = torch.sqrt(z + x)
+        z.register_hook(lambda grad : grad / (1 - 1/(2 * z)) )
+        return z
+
+
+layer_nograd = PointLayer_nograd(1)
+layer_grad = PointLayer_grad(1)
+X = torch.tensor([[13.1]], requires_grad=True)
+print(f"Input X: {X}")
+Z_nograd = layer_nograd(X)
+Z_grad = layer_grad(X)
+
+print(f"Output Z_grad: {Z_grad}")
+print(f"Terminated after {layer_grad.iterations} iterations with error {layer_grad.err}")
+print(f"Output Z_nograd: {Z_nograd}")
+print(f"Terminated after {layer_nograd.iterations} iterations with error {layer_nograd.err}")
+
+sol_grad = torch.sqrt(Z_grad + X)
+print(f"Solution grad: {sol_grad}")
+sol_nograd = torch.sqrt(Z_nograd + X)
+print(f"Solution nograd: {sol_nograd}")
+
+#get gradient of Z with respect to X
+grad_grad = torch.autograd.grad(Z_grad, X, torch.ones_like(Z_grad))
+print(f"Gradient grad: {grad_grad}")
+grad_nograd = torch.autograd.grad(Z_nograd, X, torch.ones_like(Z_nograd))
+print(f"Gradient nograd: {grad_nograd}")
+print("Difference in gradients: ", grad_grad[0] - grad_nograd[0])
+make_dot(Z_nograd).render("Z_nograd", format="png")
+make_dot(Z_grad).render("Z_grad", format="png")
+
+d = grad_nograd[0] / (1 - 1/(2 * torch.sqrt(Z_nograd + X)))
+print(d)
