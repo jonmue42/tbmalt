@@ -1,0 +1,30 @@
+digraph {
+	graph [size="12,12"]
+	node [align=left fontname=monospace fontsize=10 height=0.2 ranksep=0.1 shape=box style=filled]
+	137070960289072 [label="
+ (2, 2)" fillcolor=darkolivegreen1]
+	137070961652288 [label=_RootFinderBackward]
+	137071263658000 -> 137070961652288
+	137070960280032 [label="
+ (1)" fillcolor=lightblue]
+	137070960280032 -> 137071263658000
+	137071263658000 [label=AccumulateGrad]
+	137071263518912 -> 137070961652288
+	137070960184048 [label="
+ (2, 2)" fillcolor=lightblue]
+	137070960184048 -> 137071263518912
+	137071263518912 [label=AccumulateGrad]
+	137070960292592 -> 137070961652288
+	137070960292592 [label="
+ (2, 2)" fillcolor=orange]
+	137070960280032 -> 137070961652288
+	137070960280032 [label="
+ (1)" fillcolor=orange]
+	137070960184048 -> 137070961652288
+	137070960184048 [label="
+ (2, 2)" fillcolor=orange]
+	137070961652288 -> 137070960289072
+	137070960289152 [label="
+ (4)" fillcolor=darkolivegreen3]
+	137070960289152 -> 137070960289072 [style=dotted]
+}
