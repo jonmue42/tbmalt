@@ -113,35 +113,36 @@ hubbard_feed = HubbardFeed.from_database(path, species)
 repulsive_feed = RepulsiveSplineFeed.from_database(path, species)
 
 # Set up the calculator
-dftb_calculator = Dftb2_xitorch(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsive_feed)
-dftb_calculator_notimp = Dftb2_notimp(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsive_feed)
+dftb_calculator = Dftb2(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsive_feed)
+#dftb_calculator = Dftb2_xitorch(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsive_feed)
+#dftb_calculator = Dftb2_notimp(hamiltonian_feed, overlap_feed, occupation_feed, hubbard_feed, r_feed=repulsive_feed)
 #dftb_calculator = Dftb1(hamiltonian_feed, overlap_feed, occupation_feed, r_feed=repulsive_feed)
 
 # Run a SCF calculation
 start_time = time.time()
 energy = dftb_calculator(H2O, orbital_info)
-energy_notimp = dftb_calculator_notimp(H2O, orbital_info)
+#energy_notimp = dftb_calculator_notimp(H2O, orbital_info)
 end_time = time.time()
 print('Energy:', energy)
-print('Energy not imp:', energy_notimp)
+#print('Energy not imp:', energy_notimp)
 print('Time:', end_time - start_time)
 
 # Get total energy
 total_energy = dftb_calculator.total_energy
-total_energy_notimp = dftb_calculator_notimp.total_energy
+#total_energy_notimp = dftb_calculator_notimp.total_energy
 print('Total energy:', total_energy)
-print('Total energy not imp:', total_energy_notimp)
+#print('Total energy not imp:', total_energy_notimp)
 
 #Get repulsive energy
 repulsive_energy = dftb_calculator.repulsive_energy
 print('Repulsive energy:', repulsive_energy)
-print('Repulsive energy not imp:', dftb_calculator_notimp.repulsive_energy)
+#print('Repulsive energy not imp:', dftb_calculator_notimp.repulsive_energy)
 
 # Calculate the gradient
 start_time = time.time()
 start_time_xitorch = time.time()
 #gradient = torch.autograd.grad(total_energy, H2O.positions, grad_outputs=torch.ones_like(total_energy))[0]
-gradient_notimp = torch.autograd.grad(total_energy_notimp, H2O.positions, grad_outputs=torch.ones_like(total_energy_notimp))[0]
+#gradient_notimp = torch.autograd.grad(total_energy_notimp, H2O.positions, grad_outputs=torch.ones_like(total_energy_notimp))[0]
 end_time_xitorch = time.time()
 print('Time xitorch:', end_time_xitorch - start_time_xitorch)
 start_time_notimp = time.time()
@@ -152,9 +153,9 @@ print('Time not imp:', end_time_notimp - start_time_notimp)
 #(gradient,) = torch.autograd.grad(total_energy, H2O.positions)#, #retain_graph=True)
 print(H2O.positions)
 forces = -gradient
-forces_notimp = -gradient_notimp
+#forces_notimp = -gradient_notimp
 end_time = time.time()
 
 print('Forces:', forces)
-print('Forces not imp:', forces_notimp)
+#print('Forces not imp:', forces_notimp)
 print('Time:', end_time - start_time)

@@ -24,6 +24,7 @@ from tbmalt import ConvergenceError
 from torch import Tensor
 from torchviz import make_dot
 from xitorch.optimize import equilibrium
+from xitorch._impls.optimize.root.rootsolver import broyden1, broyden2
 
 # Issues:
 #   - There is an issue with how thins are currently being dealt with; according
@@ -116,17 +117,21 @@ def implicit(fn, z, *args, **kwargs):
     final_detached = fn(z_2, *args, **kwargs)
     print('Final detached')
     print(final_detached)
+    jacobian = torch.autograd.functional.jacobian(fn, z_2)
+    print('Jacobian')
+    print(jacobian)
+    jacobian_contrib = torch.tensor([1.0, 1.0, 1.0])@torch.linalg.inv(torch.eye(3) - jacobian)
+    #jacobian_contrib = jacobian_contrib@torch.tensor([1.0, 1.0, 1.0])
+    #jacobian_contrib = torch.tensor([1.0, 1.0, 1.0])@jacobian_contrib
+    print('Jacobian contribution')
+    print(jacobian_contrib)
     #implicit_contrib = torch.autograd.grad(final_detached, z_2, retain_graph = True)[0]
     implicit_contrib = torch.autograd.grad(final_detached, z_2, torch.ones_like(final_detached), retain_graph = True)[0]
     print('Implicit contribution')
-    #implicit_contrib = torch.tensor([-0.4364792491884373,  0.2182396235950179,  0.2182396217076388])
-    finite_diff_res = finite_diff(fn, z, 1e-6)
-    print('finite_diff_res')
-    print(finite_diff_res)
-    implicit_contrib = finite_diff_res
     print(implicit_contrib)
-    final_detached.register_hook(lambda grad: grad/(1-implicit_contrib))
-    final_detached.register_hook(lambda grad: print("Grad in hook:", grad))
+    #final_detached.register_hook(lambda grad: grad/(1-implicit_contrib))
+    final_detached.register_hook(lambda grad: grad*jacobian_contrib)
+    #final_detached.register_hook(lambda grad: print("Grad in hook:", grad))
     return final_detached
 
 # This method really could benefit from a refactoring. It should be more
@@ -839,6 +844,7 @@ class Dftb2(Dftb1):
 
                     # If the system has converged then assign the `q_converged`
                     # values and break out of the SCC cycle.
+                    print("SCC step", step)
                     if self.mixer.converged:
                         q_converged[:] = q_current[:]
                         self.converged = torch.tensor(True)
@@ -934,9 +940,15 @@ class Dftb2(Dftb1):
         # auto-grad engine it will allow for gradients to be computed. This two
         # step approach allows for gradients to be computed without having to
         # track them through the full SCC cycle.
-        #self._scc_cycle(q_converged)
-        q_final = implicit(self._scc_cycle, q_converged)
-        self._scc_cycle(q_final)
+        #reconnect to scc cycle
+        self._scc_cycle(q_converged)
+        #q_final = implicit(self._scc_cycle, q_converged)
+        #self._scc_cycle(q_final)
+        self._scc_cycle(q_converged)
+        self._scc_cycle(q_converged)
+        self._scc_cycle(q_converged)
+        self._scc_cycle(q_converged)
+        self._scc_cycle(q_converged)
         #q_final = self.mixer(self._scc_cycle(q_current),
        #                                    q_current)
         #self.mixer.reset()
@@ -998,15 +1010,15 @@ class Dftb2(Dftb1):
             resolved, but must match up with that as defined by the orbs
             attribute `shell_resolved`.
         """
-        print('Values from SCC cycle\n')
-        print('q_in', q_in)
-        print('core_hamiltonian', self.core_hamiltonian)
-        print('overlap', self.overlap)
-        print('q_zero_res', self.q_zero_res)
-        print('gamma', self.gamma)
-        print('orbs_per_res', self.orbs.orbs_per_res)
-        print('_solver_settings', self._solver_settings)
-        print('orbs', self.orbs)
+       # print('Values from SCC cycle\n')
+       # print('q_in', q_in)
+       # print('core_hamiltonian', self.core_hamiltonian)
+       # print('overlap', self.overlap)
+       # print('q_zero_res', self.q_zero_res)
+       # print('gamma', self.gamma)
+       # print('orbs_per_res', self.orbs.orbs_per_res)
+       # print('_solver_settings', self._solver_settings)
+       # print('orbs', self.orbs)
 
         # Construct the shift matrix
         shifts = torch.einsum(
@@ -1419,7 +1431,15 @@ class Dftb2_notimp(Dftb1):
         # step approach allows for gradients to be computed without having to
         # track them through the full SCC cycle.
         self._scc_cycle(q_converged)
-        #implicit(self._scc_cycle, q_converged)
+
+        #Implicit contrib calculation as test using autograd##################################
+       # q_test = q_converged.clone().detach().requires_grad_(True)
+       # f0 = self._scc_cycle(q_test)
+       # contrib = torch.autograd.grad(f0, q_test, grad_outputs=torch.tensor([1.0, 523.0, 3.0]), retain_graph=True)
+       # print('Contrib', contrib)
+
+
+        #####################################################################################
 
         # Calculate and return the total system energy, taking into account
         # the entropy term as and when necessary.
@@ -1781,6 +1801,7 @@ class Dftb2_xitorch(Dftb1):
                       self.n_electrons
                       )
         q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params)
+        #q_xit = broyden2(_scc_cycle_pure, q_current, params=xit_params)
         print('FINAL Q FROM XITORCH: ', q_xit)
         #Reconnecting to graph of class????
         self._scc_cycle(q_xit)
