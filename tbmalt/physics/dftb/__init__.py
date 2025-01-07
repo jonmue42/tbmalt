@@ -89,6 +89,36 @@ def _scc_cycle_pure(q_in,
     # Compute and return the new
     return _mulliken(rho, overlap, orbs)
 
+def scc_method(fcn,
+               q_current,
+               params = None,
+               mixer = Anderson,
+               max_scc_iter=200,
+               supress_SCF_error=False,
+               ):
+    print('Values from SCC method\n')
+    #Non batch version only TODO batched version
+    mixer.reset()
+    q_converged = torch.zeros_like(q_current)
+    for step in range(1, max_scc_iter + 1):
+        q_current = mixer(
+                fcn(q_current, *params),
+                q_current
+                )
+        if mixer.converged:
+            q_converged[:] = q_current[:]
+            #self.converged = torch.tensor(True)
+            break
+
+    else:
+        #self.converged = torch.tensor(False)
+        if not supress_SCF_error:
+            raise ConvergenceError(
+                "SCC cycle failed to converge; "
+                "iteration limit reached")
+
+    return q_converged
+
 
 
 #def finite_diff(fn, z, delta=1E-6):
@@ -831,11 +861,13 @@ class Dftb2(Dftb1):
         # A preliminary SCC cycle is performed outside of the gradient and acts
         # only to get the converged charges to be used in the second cycle.
         with torch.no_grad():
+            print("Mixer", self.mixer)
 
             # Non-batch systems are treated separately for the sake of clarity
             # as special treatment is required for the batch case.
             if not self.is_batch:
                 # Begin the SCC cycle
+                print("SCC cycle")
                 for step in range(1, self.max_scc_iter + 1):
 
                     # Perform a single SCC step and apply the mixing algorithm.
@@ -845,6 +877,7 @@ class Dftb2(Dftb1):
                     # If the system has converged then assign the `q_converged`
                     # values and break out of the SCC cycle.
                     print("SCC step", step)
+                    print("q_current", q_current)
                     if self.mixer.converged:
                         q_converged[:] = q_current[:]
                         self.converged = torch.tensor(True)
@@ -1800,31 +1833,68 @@ class Dftb2_xitorch(Dftb1):
                       self.overlap,
                       self.n_electrons
                       )
-        q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params)
+        #q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params, method=self.scc_method, mixer = self.mixer,max_scc_iter=1000, supress_SCF_error=False)
+#        q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params)
         #q_xit = broyden2(_scc_cycle_pure, q_current, params=xit_params)
-        print('FINAL Q FROM XITORCH: ', q_xit)
+#        print('FINAL Q FROM XITORCH: ', q_xit)
         #Reconnecting to graph of class????
-        self._scc_cycle(q_xit)
+#        self._scc_cycle(q_xit)
+
+        #######################################
+        with torch.no_grad():
+            q_converged = scc_method(_scc_cycle_pure, q_current, params=xit_params, mixer = self.mixer)
+        q_converged = _scc_cycle_pure(q_converged, *xit_params)
+        print('Q_converged:', q_converged)
+        q0 = q_converged.clone().detach().requires_grad_()
+        f0 = _scc_cycle_pure(q0, *xit_params)
+        def backward_hook(grad):
+            g = scc_method(lambda y : torch.autograd.grad(f0, q0, y, retain_graph=True)[0] + grad,
+                                       grad, params=(), mixer = self.mixer)
+            print('Gradient:', g)
+            return g
         
-
-        # Step 3: Final SCC cycle
-        # A single shot SCC cycle is now performed using the converged charges
-        # as the initial starting guess. As this is done within view of the
-        # auto-grad engine it will allow for gradients to be computed. This two
-        # step approach allows for gradients to be computed without having to
-        # track them through the full SCC cycle.
-        #self._scc_cycle(q_converged)
-        #q_final = implicit(self._scc_cycle, q_converged)
-        #self._scc_cycle(q_final)
-        #q_final = self.mixer(self._scc_cycle(q_current),
-       #                                    q_current)
-        #self.mixer.reset()
-        #q_final = implicit(self.mixer, self._scc_cycle(q_current), q_current)
+        q_converged.register_hook(backward_hook)
 
 
-        # Calculate and return the total system energy, taking into account
-        # the entropy term as and when necessary.
+        #######################################
+        self._scc_cycle(q_converged)
+        
         return self.mermin_energy
+
+    #@staticmethod
+    #def scc_method(fcn,
+    #               q_current,
+    #               params,
+    #               mixer = Anderson,
+    #               max_scc_iter=200,
+    #               supress_SCF_error=False,
+    #               ):
+    #    print('Values from SCC method\n')
+    #    #Non batch version only TODO batched version
+    #    mixer.reset()
+    #    print('Mixing:', mixer)
+    #    q_converged = torch.zeros_like(q_current)
+    #    for step in range(1, max_scc_iter + 1):
+    #        print('Step:', step)
+    #        q_current = mixer(
+    #                fcn(q_current, *params),
+    #                q_current
+    #                )
+    #        print('Q_current:', q_current)
+    #        if mixer.converged:
+    #            q_converged[:] = q_current[:]
+    #            #self.converged = torch.tensor(True)
+    #            break
+
+    #    else:
+    #        #self.converged = torch.tensor(False)
+    #        if not supress_SCF_error:
+    #            raise ConvergenceError(
+    #                "SCC cycle failed to converge; "
+    #                "iteration limit reached")
+
+    #    return q_converged
+
 
     def __cull(self, mask: Tensor):
         """Cull converged systems from the calculator instance.
