@@ -1855,6 +1855,12 @@ class Dftb2_xitorch(Dftb1):
         
         q_converged.register_hook(backward_hook)
 
+        print(self.geometry)
+        print("Jacobian")
+        print(torch.autograd.functional.jacobian(self._scc_cycle, q_converged))
+        print("Determinant")
+        print(torch.det(torch.autograd.functional.jacobian(self._scc_cycle, q_converged)))
+
 
         #######################################
         self._scc_cycle(q_converged)

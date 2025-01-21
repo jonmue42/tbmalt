@@ -102,6 +102,8 @@ H2 = Geometry(torch.tensor([1, 1]),
                units='angstrom'
                )
 #H2O = C2H2Au2S3
+#H20 = CO2
+H2O = H2
 
 orbital_info = OrbitalInfo(H2O.atomic_numbers, shell_dict, shell_resolved=False)
 
