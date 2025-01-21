@@ -424,6 +424,69 @@ class Dftb1(Calculator):
         sigma = 0.1 * energy_units['ev']
         return dos(self.eig_values, self.dos_energy, sigma=sigma, mask=mask)
 
+    @property
+    def forces(self):
+        """Forces acting on the atoms"""
+        doverlap, dh0 = self._finite_diff_overlap_h0()
+        # Use the already calculated density matrix rho_mu,nu
+        density = self.rho
+        # Calculate energy weighted density matrix
+        temp_dens = torch.einsum(  # Scaled occupancy values
+            '...i,...ji->...ji', torch.sqrt(self.occupancy), self.eig_vectors)
+        #TODO This is currently a workaround to include the energy (eigenvalues) but should be solved in a better way
+        temp_dens_weighted = torch.einsum(  # Scaled occupancy values
+            '...i,...ji->...ji', self.eig_values * torch.sqrt(self.occupancy), self.eig_vectors)
+        
+        rho_weighted = temp_dens_weighted @ temp_dens.transpose(-1, -2).conj()
+
+        force = - torch.einsum('...nm,...acmn->...ac', density, dh0) + torch.einsum('...nm,...acmn->...ac', rho_weighted, doverlap) - self.r_feed.gradient(self.geometry)
+
+        return force
+
+    def _finite_diff_overlap_h0(self, delta=1.0e-6):
+        """Calculates the gradient of the overlap using finite differences
+        
+        Arguments:
+            delta: step size for finite differences
+
+        Returns:
+            doverlap: gradients of the overlap matrix for each atom and corresponding coordinates.
+                The returned Tensor has the dimensions [ num_batches, num_atoms, coords, 1st overlap dim, 2nd overlap dim ].
+                The atoms for each batch are ordered in the same way as given by geomytry.atomic_numbers.
+        """
+        # Instantiate Tensor for overlapp diff with dim: [ num_batches, num_atoms, coords, 1st overlap dim, 2nd overlap dim ]
+        overlap_dim = self.overlap.size()[-2::]
+        h0_dim = self.hamiltonian.size()[-2::]
+        postions_dim = self.geometry._positions.size()
+        doverlap_dim = postions_dim + overlap_dim
+        dh0_dim = postions_dim + h0_dim
+
+        doverlap = torch.zeros(doverlap_dim, device=self.device, dtype=self.dtype)
+        dh0 = torch.zeros(dh0_dim, device=self.device, dtype=self.dtype)
+        for atom_idx in range(self.geometry.atomic_numbers.size(-1)*3):
+            # Make full copy of original geometry and change position
+            dgeometry1 = self.geometry.detach().clone()
+            dgeometry2 = self.geometry.detach().clone()
+            # The following changes the atom_idx-nth coordinate of the geometry for each batch
+            temp_pos1 = dgeometry1._positions.flatten()
+            temp_pos1[atom_idx::3*postions_dim[-2]] += delta
+            
+            temp_pos2 = dgeometry2._positions.flatten()
+            temp_pos2[atom_idx::3*postions_dim[-2]] -= delta
+            # Set the changed positions for the dgeometry
+            dgeometry1._positions = temp_pos1.unflatten(dim=0, sizes=postions_dim)
+            dgeometry2._positions = temp_pos2.unflatten(dim=0, sizes=postions_dim)
+            # Calculate temporary overlap matrix with the shifted geometry then finite difference
+            temp_overlap1 = self.s_feed.matrix(dgeometry1, self.orbs)
+            temp_overlap2 = self.s_feed.matrix(dgeometry2, self.orbs)
+            
+            temp_h01 = self.h_feed.matrix(dgeometry1, self.orbs)
+            temp_h02 = self.h_feed.matrix(dgeometry2, self.orbs)
+
+            doverlap[..., int(atom_idx / 3), atom_idx % 3, :, :] = (temp_overlap1 - temp_overlap2) / (2*delta)
+            dh0[..., int(atom_idx / 3), atom_idx % 3, :, :] = (temp_h01 - temp_h02) / (2*delta)
+        return doverlap, dh0
+
     def reset(self):
         """Reset all attributes and cached properties."""
         self._overlap = None
