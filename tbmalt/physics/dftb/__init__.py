@@ -1833,12 +1833,13 @@ class Dftb2_xitorch(Dftb1):
                       self.overlap,
                       self.n_electrons
                       )
-        #q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params, method=self.scc_method, mixer = self.mixer,max_scc_iter=1000, supress_SCF_error=False)
-#        q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params)
+       # q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params, method=self.scc_method, mixer = self.mixer,max_scc_iter=1000, supress_SCF_error=False)
+        #q_xit = equilibrium(_scc_cycle_pure, q_current, params=xit_params, method='broyden1', max_scc_iter=1000)
         #q_xit = broyden2(_scc_cycle_pure, q_current, params=xit_params)
-#        print('FINAL Q FROM XITORCH: ', q_xit)
+        #print('FINAL Q FROM XITORCH: ', q_xit)
+
         #Reconnecting to graph of class????
-#        self._scc_cycle(q_xit)
+        #self._scc_cycle(q_xit)
 
         #######################################
         with torch.no_grad():
