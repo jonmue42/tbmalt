@@ -433,6 +433,9 @@ class Dftb1(Calculator):
 
         return force
 
+    def autograd_overlap_h0(self):
+        return 0
+
     def _finite_diff_overlap_h0(self, delta=1.0e-6):
         """Calculates the gradient of the overlap using finite differences
         
