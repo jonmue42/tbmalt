@@ -21,8 +21,11 @@ from tbmalt.common.maths.mixers import Simple, Anderson, _Mixer
 from tbmalt.data.units import energy_units
 from tbmalt import ConvergenceError
 
-from torch import Tensor
+from tbmalt.structures.geometry import Geometry
 
+from torch import Tensor
+from torch.autograd.functional import jacobian
+import time
 # Issues:
 #   - There is an issue with how thins are currently being dealt with; according
 #     to DFTB+ Eband, E0, TS, & fillings should be doubled for spin unpolarised
@@ -976,6 +979,15 @@ class Dftb2(Calculator):
         Note: This method still uses finite differences to calculated the gradient of the overlap and core hamiltonian."""
 
         doverlap, dh0 = self._finite_diff_overlap_h0()
+        #start = time.time()
+        #doverlap = self.autograd_overlap()
+        #end = time.time()
+        #autograd_overlap = torch.vmap(self.autograd_overlap)
+        #doverlap = autograd_overlap()
+        print("DOverlap")
+        print(doverlap)
+        print(doverlap.size())
+        #print("Time for autograd overlap: ", end-start)
         # Use the already calculated density matrix rho_mu,nu
         density = self.rho
         # Calculate energy weighted density matrix
@@ -986,6 +998,9 @@ class Dftb2(Calculator):
             '...i,...ji->...ji', self.eig_values * torch.sqrt(self.occupancy), self.eig_vectors)
         
         rho_weighted = temp_dens_weighted @ temp_dens.transpose(-1, -2).conj()
+
+        print("rho * doverlap")
+        print(torch.einsum('...nm,...acmn->...ac', self.rho, doverlap))
         
         #Non-scc Forces
         force = - torch.einsum('...nm,...acmn->...ac', density, dh0) + torch.einsum('...nm,...acmn->...ac', rho_weighted, doverlap) - self.r_feed.gradient(self.geometry)
@@ -1009,6 +1024,161 @@ class Dftb2(Calculator):
 
         force = force - h1_correction - gamma_correction
         return force
+
+    def autograd_overlap(self):
+        def s_mat_func(pos): 
+            return self.s_feed.matrix(Geometry(self.geometry.atomic_numbers, pos), self.orbs)
+        jac = jacobian(s_mat_func, (self.geometry.positions), vectorize=True)
+        print("Jacobian")
+        print(jac)
+        return jac.permute(2,3,0,1)
+    
+    @property
+    def forces2(self, delta=1.0e-6):
+        def bT(tensor: Tensor) -> Tensor:
+            """Dimensionally agnostic "transpose".
+        
+            Reverses the dimensions of a tensor like so [m, n, o] -> [o, n, m]. This is
+            designed to preserve the original functionality of the `torch.T` operator
+            in an effort to maintain dimensional/batch agnosticism. Recent versions of
+            PyTorch will only permit the transpose operator to be used on 2D matrices
+            which makes dimensionally agnostic treatment of tensors difficult in some
+            situations.
+        
+            Arguments:
+                tensor: the tensor whose dimensions are to be flipped.
+        
+            Returns:
+                flipped_tensor: the tensor with its dimensions reversed.
+        
+            """
+            return tensor.permute(*torch.arange(tensor.ndim - 1, -1, -1))
+
+        def bT2(tensor: Tensor) -> Tensor:
+            """Transposes a tensor and expands it to two dimensions.
+        
+            This method performs a transpose on a target tensor via a call to `bT` then
+            invokes `torch.atleast_2d` to ensure that the tensor is at least two-
+            dimensional. This helps promote batch agnostic programming.
+        
+            Note that this is the same as calling `torch.atleast_2d(bT(tensor))` or
+            `torch.atleast_2d(tensor.permute(*torch.arange(tensor.ndim - 1, -1, -1)))`.
+        
+            Arguments:
+                tensor: tensor whose dimensions are to be flipped and expanded.
+        
+            Returns:
+                modified_tensor: the modified tensor.
+        
+            """
+            return torch.atleast_2d(bT(tensor))
+
+        force = - self.r_feed.gradient(self.geometry)
+        #instanciate overlap diff
+        doverlap = torch.zeros(self.overlap.size(), device=self.device, dtype=self.dtype)
+
+        #Loop over unique interactions to calculate dh0 and dS block wise
+        #Identify all unique species combinations
+        unique_interactions = torch.combinations(
+                self.geometry.unique_atomic_numbers(), with_replacement=True)
+
+        # Construct an element-element pair matrix
+        an_mat_a = self.orbs.atomic_number_matrix('atomic')
+
+        print("Rho")
+        print(self.rho)
+        #Loop over the unique interactions
+        for pair in unique_interactions:
+            print("Pair")
+            print(pair)
+            a_idx = torch.nonzero((an_mat_a == pair).all(-1))
+            # Skip the loop if no interactions are found and ignore homo-atomic
+            # blocks in the lower triangle to avoid double computation.
+            if a_idx.nelement() == 0:
+                continue
+            elif pair[0] == pair[1]:
+                a_idx = a_idx[torch.where(a_idx[..., -2].le(a_idx[..., -1]))]
+            # Reshape atom index list to be more amenable to advanced indexing.
+            # This approach is a little messy but reduces memory on the cpu.
+            a_idx_l = a_idx[:, :-1].squeeze(1)
+            b_idx_l = a_idx[:, 3 - a_idx.shape[-1]::2].squeeze(1)
+            print("a_idx_l: ", a_idx_l)
+            print("b_idx_l: ", b_idx_l)
+            
+            # Get the matrix indices associated with the target blocks.
+            blk_idx = self.s_feed.atomic_block_indices(a_idx_l, b_idx_l, self.orbs)
+            print('blk_idx')
+            print(blk_idx)
+
+            # Get the atomic numbers of the atoms
+            zs = self.geometry.atomic_numbers
+            zs_1 = zs[*bT2(a_idx_l)]
+            zs_2 = zs[*bT2(b_idx_l)]
+    
+            # Ensure all interactions are between identical species pairs.
+            if len(zs_1.unique()) != 1:
+                raise ValueError('Atoms in atomic_idx_1 must be the same species')
+    
+            if len(zs_2.unique()) != 1:
+                raise ValueError('Atoms in atomic_idx_2 must be the same species')
+    
+            # Atomic numbers of the species in list 1 and 2
+            z_1, z_2 = zs_1[0], zs_2[0]
+    
+            # C-N and N-C are the same interaction: choice has been made to have
+            # only one set of splines for each species pair. Thus, the two lists
+            # may need to be swapped.
+            if z_1 > z_2:
+                atomic_idx_1, atomic_idx_2 = atomic_idx_2, atomic_idx_1
+                z_1, z_2 = z_2, z_1
+                flip = True
+            else:
+                flip = False
+    
+
+            # Construct the tensor into which results are to be placed
+            n_rows, n_cols = self.orbs.n_orbs_on_species(torch.stack((z_1, z_2)))
+            blks = torch.zeros(len(a_idx_l), n_rows, n_cols, dtype=self.dtype,
+                               device=self.device)
+    
+            # Identify the off-site blocks
+            off_site = ~self.s_feed._partition_blocks(a_idx_l, b_idx_l)
+
+            if any(off_site):
+                blocks = self.s_feed._off_site_blocks(
+                        a_idx_l[off_site], b_idx_l[off_site],
+                        self.geometry, self.orbs
+                        )
+                #calculated shifted off_sites in x,y,z direction
+                shift = [torch.Tensor([delta, 0.0, 0.0]), torch.Tensor([0.0, delta, 0.0]), torch.Tensor([0.0, 0.0, delta])]
+                for coord in range(1,2):
+                    print("Coord")
+                    print(coord)
+                    blocks1_shift = self.s_feed._off_site_blocks(
+                            a_idx_l[off_site], b_idx_l[off_site],
+                            self.geometry, self.orbs,
+                            shift_vec=shift[coord]
+                            )
+                    #print("Blocks1")
+                    #print(blocks1_shift)
+                    blocks2_shift = self.s_feed._off_site_blocks(
+                            a_idx_l[off_site], b_idx_l[off_site],
+                            self.geometry, self.orbs,
+                            shift_vec=-shift[coord]
+                            )
+                    #print("Blocks2")
+                    #print(blocks2_shift)
+                    finite_diff = (blocks1_shift - blocks2_shift) / (2*delta)
+                    print("Finite diff")
+                    print(finite_diff)
+                    print("Rho")
+                    print(self.rho.T[*blk_idx])
+                    print((self.rho.T[*blk_idx][off_site] * finite_diff).sum() * 2)
+
+        return force
+
+    def _finite_diff_overlap(self, delta=1.0e-6):
+        return 0
 
     def _finite_diff_overlap_h0(self, delta=1.0e-6):
         """Calculates the gradient of the overlap using finite differences
