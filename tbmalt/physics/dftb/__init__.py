@@ -1073,7 +1073,8 @@ class Dftb2(Calculator):
             """
             return torch.atleast_2d(bT(tensor))
 
-        force = - self.r_feed.gradient(self.geometry)
+        #force = - self.r_feed.gradient(self.geometry)
+        force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
         #instanciate overlap diff
         doverlap = torch.zeros(self.overlap.size(), device=self.device, dtype=self.dtype)
 
@@ -1151,7 +1152,7 @@ class Dftb2(Calculator):
                         )
                 #calculated shifted off_sites in x,y,z direction
                 shift = [torch.Tensor([delta, 0.0, 0.0]), torch.Tensor([0.0, delta, 0.0]), torch.Tensor([0.0, 0.0, delta])]
-                for coord in range(1,2):
+                for coord in range(0,3):
                     print("Coord")
                     print(coord)
                     blocks1_shift = self.s_feed._off_site_blocks(
@@ -1168,12 +1169,34 @@ class Dftb2(Calculator):
                             )
                     #print("Blocks2")
                     #print(blocks2_shift)
+                    print("a_idx_l off_site")
+                    print(a_idx_l[off_site])
+                    print("b_idx_l off_site")
+                    print(b_idx_l[off_site])
                     finite_diff = (blocks1_shift - blocks2_shift) / (2*delta)
                     print("Finite diff")
                     print(finite_diff)
                     print("Rho")
                     print(self.rho.T[*blk_idx])
-                    print((self.rho.T[*blk_idx][off_site] * finite_diff).sum() * 2)
+                    desired_dim = force[:,coord:coord+1][a_idx_l].dim()
+                    #val = (self.rho.T[*blk_idx][off_site] * finite_diff).sum(-1) * 2
+                    val2 = (self.rho.T[*blk_idx][off_site] * finite_diff) * 2
+                    val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
+                    print("Val sum dim")
+                    print(force[:,coord:coord+1][a_idx_l].dim())
+                    print("Val")
+                    print(val)
+                    print(val2)
+                    val_sum = (self.rho.T[*blk_idx][off_site] * finite_diff).sum() * 2
+                    print("Val sum")
+                    print(val_sum)
+                    print((self.rho.T[*blk_idx][off_site] * finite_diff) * 2)
+                    print(force[:, coord:coord+1])
+                    print(force[:,coord:coord+1][a_idx_l])
+                    force[:,coord:coord+1].index_put_((a_idx_l,), -val, accumulate=True)
+                    force[:,coord:coord+1].index_put_((b_idx_l,), val, accumulate=True)
+                    print("Force")
+                    print(force)
 
         return force
 
