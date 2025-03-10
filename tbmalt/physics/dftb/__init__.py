@@ -1035,48 +1035,9 @@ class Dftb2(Calculator):
     
     @property
     def forces2(self, delta=1.0e-6):
-        def bT(tensor: Tensor) -> Tensor:
-            """Dimensionally agnostic "transpose".
         
-            Reverses the dimensions of a tensor like so [m, n, o] -> [o, n, m]. This is
-            designed to preserve the original functionality of the `torch.T` operator
-            in an effort to maintain dimensional/batch agnosticism. Recent versions of
-            PyTorch will only permit the transpose operator to be used on 2D matrices
-            which makes dimensionally agnostic treatment of tensors difficult in some
-            situations.
-        
-            Arguments:
-                tensor: the tensor whose dimensions are to be flipped.
-        
-            Returns:
-                flipped_tensor: the tensor with its dimensions reversed.
-        
-            """
-            return tensor.permute(*torch.arange(tensor.ndim - 1, -1, -1))
-
-        def bT2(tensor: Tensor) -> Tensor:
-            """Transposes a tensor and expands it to two dimensions.
-        
-            This method performs a transpose on a target tensor via a call to `bT` then
-            invokes `torch.atleast_2d` to ensure that the tensor is at least two-
-            dimensional. This helps promote batch agnostic programming.
-        
-            Note that this is the same as calling `torch.atleast_2d(bT(tensor))` or
-            `torch.atleast_2d(tensor.permute(*torch.arange(tensor.ndim - 1, -1, -1)))`.
-        
-            Arguments:
-                tensor: tensor whose dimensions are to be flipped and expanded.
-        
-            Returns:
-                modified_tensor: the modified tensor.
-        
-            """
-            return torch.atleast_2d(bT(tensor))
-
         #force = - self.r_feed.gradient(self.geometry)
         force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
-        #instanciate overlap diff
-        doverlap = torch.zeros(self.overlap.size(), device=self.device, dtype=self.dtype)
 
         #Loop over unique interactions to calculate dh0 and dS block wise
         #Identify all unique species combinations
@@ -1086,8 +1047,6 @@ class Dftb2(Calculator):
         # Construct an element-element pair matrix
         an_mat_a = self.orbs.atomic_number_matrix('atomic')
 
-        print("Rho")
-        print(self.rho)
         #Loop over the unique interactions
         for pair in unique_interactions:
             print("Pair")
@@ -1111,46 +1070,10 @@ class Dftb2(Calculator):
             print('blk_idx')
             print(blk_idx)
 
-            # Get the atomic numbers of the atoms
-            zs = self.geometry.atomic_numbers
-            zs_1 = zs[*bT2(a_idx_l)]
-            zs_2 = zs[*bT2(b_idx_l)]
-    
-            # Ensure all interactions are between identical species pairs.
-            if len(zs_1.unique()) != 1:
-                raise ValueError('Atoms in atomic_idx_1 must be the same species')
-    
-            if len(zs_2.unique()) != 1:
-                raise ValueError('Atoms in atomic_idx_2 must be the same species')
-    
-            # Atomic numbers of the species in list 1 and 2
-            z_1, z_2 = zs_1[0], zs_2[0]
-    
-            # C-N and N-C are the same interaction: choice has been made to have
-            # only one set of splines for each species pair. Thus, the two lists
-            # may need to be swapped.
-            if z_1 > z_2:
-                atomic_idx_1, atomic_idx_2 = atomic_idx_2, atomic_idx_1
-                z_1, z_2 = z_2, z_1
-                flip = True
-            else:
-                flip = False
-    
-
-            # Construct the tensor into which results are to be placed
-            n_rows, n_cols = self.orbs.n_orbs_on_species(torch.stack((z_1, z_2)))
-            blks = torch.zeros(len(a_idx_l), n_rows, n_cols, dtype=self.dtype,
-                               device=self.device)
-    
             # Identify the off-site blocks
             off_site = ~self.s_feed._partition_blocks(a_idx_l, b_idx_l)
 
             if any(off_site):
-                blocks = self.s_feed._off_site_blocks(
-                        a_idx_l[off_site], b_idx_l[off_site],
-                        self.geometry, self.orbs
-                        )
-
                 #create index for the force calc
                 if a_idx_l[off_site].dim() == 2:
                     force_a_idx = (a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],)
@@ -1159,9 +1082,10 @@ class Dftb2(Calculator):
                     force_a_idx = (a_idx_l[off_site], )
                     force_b_idx = (b_idx_l[off_site], )
 
-
                 #calculated shifted off_sites in x,y,z direction
-                shift = [torch.Tensor([delta, 0.0, 0.0]), torch.Tensor([0.0, delta, 0.0]), torch.Tensor([0.0, 0.0, delta])]
+                shift = [torch.Tensor([delta, 0.0, 0.0]),
+                         torch.Tensor([0.0, delta, 0.0]),
+                         torch.Tensor([0.0, 0.0, delta])]
                 for coord in range(0,3):
                     print("Coord")
                     print(coord)
