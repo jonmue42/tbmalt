@@ -1150,6 +1150,16 @@ class Dftb2(Calculator):
                         a_idx_l[off_site], b_idx_l[off_site],
                         self.geometry, self.orbs
                         )
+
+                #create index for the force calc
+                if a_idx_l[off_site].dim() == 2:
+                    force_a_idx = (a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],)
+                    force_b_idx = (b_idx_l[off_site][:,0], b_idx_l[off_site][:, 1],)
+                else:
+                    force_a_idx = (a_idx_l[off_site], )
+                    force_b_idx = (b_idx_l[off_site], )
+
+
                 #calculated shifted off_sites in x,y,z direction
                 shift = [torch.Tensor([delta, 0.0, 0.0]), torch.Tensor([0.0, delta, 0.0]), torch.Tensor([0.0, 0.0, delta])]
                 for coord in range(0,3):
@@ -1172,22 +1182,25 @@ class Dftb2(Calculator):
                     print("a_idx_l off_site")
                     print(a_idx_l[off_site])
                     print("b_idx_l off_site")
-                    print(b_idx_l[off_site])
+                    print(b_idx_l[off_site].dim())
                     finite_diff = (blocks1_shift - blocks2_shift) / (2*delta)
-                   # print("Finite diff")
-                   # print(finite_diff)
+                    print("Finite diff")
+                    print(finite_diff)
                     print("Rho")
-                    print(self.rho.mT.size())
-                    print(self.rho.mT[*blk_idx].size())
-                    print(self.rho.mT[*blk_idx])
+                    print(self.rho)
+                   # print(self.rho.mT.size())
+                   # print(self.rho.mT[*blk_idx].size())
+                   # print(self.rho.mT[*blk_idx])
                     val2 = (self.rho.mT[*blk_idx][off_site] * finite_diff) * 2
                     val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
                     print("Val")
                     print(val)
                     print("Force[..., :,coord:coord+1]")
                     print(force[..., :,coord:coord+1])
-                    force[..., :,coord:coord+1].index_put_((a_idx_l[off_site],), -val, accumulate=True)
-                    force[..., :,coord:coord+1].index_put_((b_idx_l[off_site],), val, accumulate=True)
+                    #force[..., :,coord:coord+1].index_put_((a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],), -val, accumulate=True)
+                    force[..., :,coord:coord+1].index_put_(force_a_idx, -val, accumulate=True)
+                    #force[..., :,coord:coord+1].index_put_((b_idx_l[off_site][:,0], b_idx_l[off_site][:, 1],), val, accumulate=True)
+                    force[..., :,coord:coord+1].index_put_(force_b_idx, val, accumulate=True)
                     print("Force")
                     print(force)
 
