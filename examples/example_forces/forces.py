@@ -143,7 +143,7 @@ print('S grad:', s_grad)
 
 # Calculate the gradient
 start_time = time.time()
-forces = dftb_calculator.forces2
+forces = dftb_calculator.forces3
 end_time = time.time()
 
 print('Forces:', forces)
