@@ -106,7 +106,7 @@ H2 = Geometry(torch.tensor([1, 1]),
 #geo = H2
 #geo = C2H2Au2S3
 #geo = H2O
-geo = H2O #+ H2 + CO2 + C2H2Au2S3
+geo = H2O + H2 + CO2 + C2H2Au2S3
 
 
 orbital_info = OrbitalInfo(geo.atomic_numbers, shell_dict, shell_resolved=False)
@@ -136,14 +136,10 @@ print('Total energy:', total_energy)
 #Get repulsive energy
 repulsive_energy = dftb_calculator.repulsive_energy
 print('Repulsive energy:', repulsive_energy)
-overlap = dftb_calculator.overlap
-print('Overlap:', overlap)
-s_grad = torch.autograd.grad(overlap, geo.positions, grad_outputs=torch.ones_like(overlap), retain_graph=True)[0]
-print('S grad:', s_grad)
 
 # Calculate the gradient
 start_time = time.time()
-forces = dftb_calculator.forces3
+forces = dftb_calculator.forces
 end_time = time.time()
 
 print('Forces:', forces)

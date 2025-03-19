@@ -234,7 +234,6 @@ class IntegralFeed(Feed, ABC):
             #   [[batch_idx, atom_1_idx, atom_2_idx]... for each interaction]
             # and for a single system:
             #   [[atom_1_idx, atom_2_idx]... for each interaction]
-            start_inter = time.time()
             a_idx = torch.nonzero((an_mat_a == pair).all(-1))
 
             # Skip the loop if no interactions are found and ignore homo-atomic
@@ -260,9 +259,6 @@ class IntegralFeed(Feed, ABC):
             # be done first (this is only matters for complex diagonal blocks).
             mat.transpose(-1, -2)[*blk_idx] = blks.conj()
             mat[*blk_idx] = blks
-            
-            end_inter = time.time()
-            print(f"Time for interaction {pair}: {end_inter - start_inter}")
 
         return mat
 

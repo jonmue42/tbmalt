@@ -979,15 +979,6 @@ class Dftb2(Calculator):
         Note: This method still uses finite differences to calculated the gradient of the overlap and core hamiltonian."""
 
         doverlap, dh0 = self._finite_diff_overlap_h0()
-        #start = time.time()
-        #doverlap = self.autograd_overlap()
-        #end = time.time()
-        #autograd_overlap = torch.vmap(self.autograd_overlap)
-        #doverlap = autograd_overlap()
-        print("DOverlap")
-        print(doverlap)
-        print(doverlap.size())
-        #print("Time for autograd overlap: ", end-start)
         # Use the already calculated density matrix rho_mu,nu
         density = self.rho
         # Calculate energy weighted density matrix
@@ -999,13 +990,8 @@ class Dftb2(Calculator):
         
         rho_weighted = temp_dens_weighted @ temp_dens.transpose(-1, -2).conj()
 
-        #print("rho * doverlap")
-        #print(torch.einsum('...nm,...acmn->...ac', self.rho, doverlap))
-        
         #Non-scc Forces
         force = - torch.einsum('...nm,...acmn->...ac', density, dh0) + torch.einsum('...nm,...acmn->...ac', rho_weighted, doverlap) - self.r_feed.gradient(self.geometry)
-        print('NON SCC FORCES')
-        print(force)
 
         #Scc corrcections
         
@@ -1027,112 +1013,6 @@ class Dftb2(Calculator):
         force = force - h1_correction - gamma_correction
         return force
 
-    def autograd_overlap(self):
-        def s_mat_func(pos): 
-            return self.s_feed.matrix(Geometry(self.geometry.atomic_numbers, pos), self.orbs)
-        jac = jacobian(s_mat_func, (self.geometry.positions), vectorize=True)
-        print("Jacobian")
-        print(jac)
-        return jac.permute(2,3,0,1)
-    
-    @property
-    def forces2(self, delta=1.0e-6):
-        
-        #force = - self.r_feed.gradient(self.geometry)
-        force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
-
-        #Loop over unique interactions to calculate dh0 and dS block wise
-        #Identify all unique species combinations
-        unique_interactions = torch.combinations(
-                self.geometry.unique_atomic_numbers(), with_replacement=True)
-
-        # Construct an element-element pair matrix
-        an_mat_a = self.orbs.atomic_number_matrix('atomic')
-
-        #Loop over the unique interactions
-        for pair in unique_interactions:
-            print("Pair")
-            print(pair)
-            a_idx = torch.nonzero((an_mat_a == pair).all(-1))
-            # Skip the loop if no interactions are found and ignore homo-atomic
-            # blocks in the lower triangle to avoid double computation.
-            if a_idx.nelement() == 0:
-                continue
-            elif pair[0] == pair[1]:
-                a_idx = a_idx[torch.where(a_idx[..., -2].le(a_idx[..., -1]))]
-            # Reshape atom index list to be more amenable to advanced indexing.
-            # This approach is a little messy but reduces memory on the cpu.
-            a_idx_l = a_idx[:, :-1].squeeze(1)
-            b_idx_l = a_idx[:, 3 - a_idx.shape[-1]::2].squeeze(1)
-            print("a_idx_l: ", a_idx_l)
-            print("b_idx_l: ", b_idx_l)
-            
-            # Get the matrix indices associated with the target blocks.
-            blk_idx = self.s_feed.atomic_block_indices(a_idx_l, b_idx_l, self.orbs)
-            print('blk_idx')
-            print(blk_idx)
-
-            # Identify the off-site blocks
-            off_site = ~self.s_feed._partition_blocks(a_idx_l, b_idx_l)
-
-            if any(off_site):
-                #create index for the force calc
-                if a_idx_l[off_site].dim() == 2:
-                    force_a_idx = (a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],)
-                    force_b_idx = (b_idx_l[off_site][:,0], b_idx_l[off_site][:, 1],)
-                else:
-                    force_a_idx = (a_idx_l[off_site], )
-                    force_b_idx = (b_idx_l[off_site], )
-
-                #calculated shifted off_sites in x,y,z direction
-                shift = [torch.Tensor([delta, 0.0, 0.0]),
-                         torch.Tensor([0.0, delta, 0.0]),
-                         torch.Tensor([0.0, 0.0, delta])]
-                for coord in range(0,3):
-                    print("Coord")
-                    print(coord)
-                    blocks1_shift = self.s_feed._off_site_blocks(
-                            a_idx_l[off_site], b_idx_l[off_site],
-                            self.geometry, self.orbs,
-                            shift_vec=shift[coord]
-                            )
-                    #print("Blocks1")
-                    #print(blocks1_shift)
-                    blocks2_shift = self.s_feed._off_site_blocks(
-                            a_idx_l[off_site], b_idx_l[off_site],
-                            self.geometry, self.orbs,
-                            shift_vec=-shift[coord]
-                            )
-                    #print("Blocks2")
-                    #print(blocks2_shift)
-                    print("a_idx_l off_site")
-                    print(a_idx_l[off_site])
-                    print("b_idx_l off_site")
-                    print(b_idx_l[off_site].dim())
-                    finite_diff = (blocks1_shift - blocks2_shift) / (2*delta)
-                    print("Finite diff")
-                    print(finite_diff)
-                    print("Rho")
-                    print(self.rho)
-                   # print(self.rho.mT.size())
-                   # print(self.rho.mT[*blk_idx].size())
-                   # print(self.rho.mT[*blk_idx])
-                    val2 = (self.rho.mT[*blk_idx][off_site] * finite_diff) * 2
-                    val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
-                    print("Val")
-                    print(val)
-                    print("Force[..., :,coord:coord+1]")
-                    print(force[..., :,coord:coord+1])
-                    #force[..., :,coord:coord+1].index_put_((a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],), -val, accumulate=True)
-                    force[..., :,coord:coord+1].index_put_(force_a_idx, -val, accumulate=True)
-                    #force[..., :,coord:coord+1].index_put_((b_idx_l[off_site][:,0], b_idx_l[off_site][:, 1],), val, accumulate=True)
-                    force[..., :,coord:coord+1].index_put_(force_b_idx, val, accumulate=True)
-                    print("Force")
-                    print(force)
-
-        return force
-
-    
     @property
     def forces3(self):
         """Forces acting on the atoms calculated using the analytical expression.
@@ -1150,9 +1030,7 @@ class Dftb2(Calculator):
         h1 = .5 * shifts
         
         #Non-scc Forces and h1 correction
-        force = - self._finite_diff_overlap(h1=h1) - self.r_feed.gradient(self.geometry)
-        print('NON SCC FORCES: ')
-        print(force)
+        force = - self._finite_diff_overlap_h0_blocks(h1=h1) - self.r_feed.gradient(self.geometry)
 
         #Scc corrcections (additional to h1)
         
@@ -1163,7 +1041,7 @@ class Dftb2(Calculator):
         force = force - gamma_correction
         return force
 
-    def _finite_diff_overlap(self, delta=1.0e-6, h1=None):
+    def _finite_diff_overlap_h0_blocks(self, delta=1.0e-6, h1=None):
         force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
 
         #Define density and energy weighted density matrix
