@@ -1063,8 +1063,14 @@ class Dftb2(Calculator):
         # Construct an element-element pair matrix
         an_mat_a = self.orbs.atomic_number_matrix('atomic')
 
+        # Construct shift vector for later off_site finite diff calculation
+        shift = [torch.Tensor([delta, 0.0, 0.0]),
+                 torch.Tensor([0.0, delta, 0.0]),
+                 torch.Tensor([0.0, 0.0, delta])]
+
         #Loop over the unique interactions
         for pair in unique_interactions:
+            start_pair = time.time()
             a_idx = torch.nonzero((an_mat_a == pair).all(-1))
             # Skip the loop if no interactions are found and ignore homo-atomic
             # blocks in the lower triangle to avoid double computation.
@@ -1091,12 +1097,10 @@ class Dftb2(Calculator):
                 else:
                     force_a_idx = (a_idx_l[off_site], )
                     force_b_idx = (b_idx_l[off_site], )
-
+                
                 #calculated shifted off_sites in x,y,z direction
-                shift = [torch.Tensor([delta, 0.0, 0.0]),
-                         torch.Tensor([0.0, delta, 0.0]),
-                         torch.Tensor([0.0, 0.0, delta])]
                 for coord in range(0,3):
+                    start = time.time()
                     #Finite diff for overlap
                     # Calculate blocks shifted by the shift vector
                     blocks1_shift = self.s_feed._off_site_blocks(
@@ -1136,6 +1140,11 @@ class Dftb2(Calculator):
                     val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
                     force[..., :,coord:coord+1].index_put_(force_a_idx, -val, accumulate=True)
                     force[..., :,coord:coord+1].index_put_(force_b_idx, val, accumulate=True)
+                    end = time.time()
+                    print(f"Time for coord {coord}: {end-start}")
+
+                end_pair = time.time()
+                print(f"Time for pair {pair}: {end_pair-start_pair}")
 
         return force
 

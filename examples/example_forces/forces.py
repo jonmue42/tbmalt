@@ -139,7 +139,7 @@ print('Repulsive energy:', repulsive_energy)
 
 # Calculate the gradient
 start_time = time.time()
-forces = dftb_calculator.forces
+forces = dftb_calculator.forces3
 end_time = time.time()
 
 print('Forces:', forces)
