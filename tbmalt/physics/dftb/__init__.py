@@ -1030,7 +1030,8 @@ class Dftb2(Calculator):
         h1 = .5 * shifts
         
         #Non-scc Forces and h1 correction
-        force = - self._finite_diff_overlap_h0_blocks(h1=h1) - self.r_feed.gradient(self.geometry)
+        #force = - self._finite_diff_overlap_h0_blocks(h1=h1) - self.r_feed.gradient(self.geometry)
+        force = - self._finite_diff_overlap_h0_blocks_xyz(h1=h1) - self.r_feed.gradient(self.geometry)
 
         #Scc corrcections (additional to h1)
         
@@ -1041,7 +1042,7 @@ class Dftb2(Calculator):
         force = force - gamma_correction
         return force
 
-    def _finite_diff_overlap_h0_blocks(self, delta=1.0e-6, h1=None):
+    def _finite_diff_overlap_h0_blocks_xyz(self, delta=1.0e-6, h1=None):
         force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
 
         #Define density and energy weighted density matrix
@@ -1064,10 +1065,12 @@ class Dftb2(Calculator):
         an_mat_a = self.orbs.atomic_number_matrix('atomic')
 
         # Construct shift vector for later off_site finite diff calculation
-        shift = [torch.Tensor([delta, 0.0, 0.0]),
-                 torch.Tensor([0.0, delta, 0.0]),
-                 torch.Tensor([0.0, 0.0, delta])]
-
+       # shift = [torch.Tensor([delta, 0.0, 0.0]),
+       #          torch.Tensor([0.0, delta, 0.0]),
+       #          torch.Tensor([0.0, 0.0, delta])]
+        shift = torch.Tensor([[delta, 0.0, 0.0]
+                              ,[0.0, delta, 0.0]
+                             ,[0.0, 0.0, delta]])
         #Loop over the unique interactions
         for pair in unique_interactions:
             start_pair = time.time()
@@ -1097,9 +1100,174 @@ class Dftb2(Calculator):
                 else:
                     force_a_idx = (a_idx_l[off_site], )
                     force_b_idx = (b_idx_l[off_site], )
-                
+
+
+                block_a_idx = torch.cat((a_idx_l[off_site], a_idx_l[off_site], a_idx_l[off_site]), dim=0)
+                print('##########################3')
+                print('block_a_idx')
+                print(block_a_idx)
+                block_b_idx = torch.cat((b_idx_l[off_site], b_idx_l[off_site], b_idx_l[off_site]), dim=0)
+                print('block_b_idx')
+                print(block_b_idx)
+                block_shift = shift.repeat_interleave(repeats=len(a_idx_l[off_site]), dim=0)
+                print('block_shift')
+                print(block_shift)
+
+                blocks1_shift_xyz = self.s_feed._off_site_blocks(
+                        block_a_idx, block_b_idx,
+                        self.geometry, self.orbs,
+                        shift_vec=block_shift
+                        )
+                print('blocks1_shift_xyz')
+                print(blocks1_shift_xyz)
+
+                blocks2_shift_xyz = self.s_feed._off_site_blocks(
+                        block_a_idx, block_b_idx,
+                        self.geometry, self.orbs,
+                        shift_vec=-block_shift
+                        )
+                print('blocks2_shift_xyz')
+                print(blocks2_shift_xyz)
+
+                finite_diff_overlap_xyz = (blocks1_shift_xyz - blocks2_shift_xyz) / (2*delta)
+                print('finite_diff_overlap_xyz')
+                print(finite_diff_overlap_xyz)
+                print(finite_diff_overlap_xyz.shape)
+                #finite_diff_overlap_xyz = torch.reshape(finite_diff_overlap_xyz, shape=(3, len(a_idx_l[off_site]), -1))
+                finite_diff_overlap_xyz = finite_diff_overlap_xyz.view(3, -1, *finite_diff_overlap_xyz.shape[-2:])
+                print('finite_diff_overlap_xyz')
+                print(finite_diff_overlap_xyz)
+                print(finite_diff_overlap_xyz.shape)
+
                 #calculated shifted off_sites in x,y,z direction
                 for coord in range(0,3):
+                    start = time.time()
+                    #Finite diff for overlap
+                    # Calculate blocks shifted by the shift vector
+                   # blocks1_shift = self.s_feed._off_site_blocks(
+                   #         #a_idx_l[off_site], b_idx_l[off_site],
+                   #         block_a_idx, block_b_idx,
+                   #         self.geometry, self.orbs,
+                   #         shift_vec=shift[coord]
+                   #         )
+                   # print('blocks1_shift')
+                   # print(blocks1_shift)
+                   # #print(blocks1_shift.shape())
+                   # blocks2_shift = self.s_feed._off_site_blocks(
+                   #         a_idx_l[off_site], b_idx_l[off_site],
+                   #         self.geometry, self.orbs,
+                   #         shift_vec=-shift[coord]
+                   #         )
+
+                   # finite_diff_overlap = (blocks1_shift - blocks2_shift) / (2*delta)
+                    finite_diff_overlap = finite_diff_overlap_xyz[coord]
+                    print('finite_diff_overlap')
+                    print(finite_diff_overlap)
+
+
+                    #Finite diff for core hamiltonian
+                    # Calculate blocks shifted by the shift vector
+                    blocks1_shift = self.h_feed._off_site_blocks(
+                            a_idx_l[off_site], b_idx_l[off_site],
+                            self.geometry, self.orbs,
+                            shift_vec=shift[coord]
+                            )
+                    blocks2_shift = self.h_feed._off_site_blocks(
+                            a_idx_l[off_site], b_idx_l[off_site],
+                            self.geometry, self.orbs,
+                            shift_vec=-shift[coord]
+                            )
+
+                    finite_diff_hamiltonian = (blocks1_shift - blocks2_shift) / (2*delta)
+
+                    # Calculate blocks of force contribution in val2 and then sum over in val
+                    val2 = 2 * ( (density.mT[*blk_idx][off_site] * finite_diff_hamiltonian) - 
+                                (rho_weighted.mT[*blk_idx][off_site] * finite_diff_overlap) )
+                    #If h1 provided for Scc calculation also add h1_correction
+                    if h1 is not None:
+                        val2 += 2 * (density.mT[*blk_idx][off_site] * h1.mT[*blk_idx][off_site] * finite_diff_overlap)
+                    val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
+                    force[..., :,coord:coord+1].index_put_(force_a_idx, -val, accumulate=True)
+                    force[..., :,coord:coord+1].index_put_(force_b_idx, val, accumulate=True)
+                    end = time.time()
+                    print(f"Time for coord {coord}: {end-start}")
+
+                end_pair = time.time()
+                print(f"Time for pair {pair}: {end_pair-start_pair}")
+
+        return force
+
+
+    def _finite_diff_overlap_h0_blocks(self, delta=1.0e-6, h1=None):
+        force = torch.zeros(self.geometry.positions.size(), device=self.device, dtype=self.dtype)
+
+        #Define density and energy weighted density matrix
+        density = self.rho
+        # Calculate energy weighted density matrix
+        temp_dens = torch.einsum(  # Scaled occupancy values
+                   '...i,...ji->...ji', torch.sqrt(self.occupancy), self.eig_vectors)
+        #TODO This is currently a workaround to include the energy (eigenvalues) but should be solved in a better way
+        temp_dens_weighted = torch.einsum(  # Scaled occupancy values
+                   '...i,...ji->...ji', self.eig_values * torch.sqrt(self.occupancy), self.eig_vectors)
+               
+        rho_weighted = temp_dens_weighted @ temp_dens.transpose(-1, -2).conj()
+
+        #Loop over unique interactions to calculate dh0 and dS block wise
+        #Identify all unique species combinations
+        unique_interactions = torch.combinations(
+                self.geometry.unique_atomic_numbers(), with_replacement=True)
+
+        # Construct an element-element pair matrix
+        an_mat_a = self.orbs.atomic_number_matrix('atomic')
+
+        # Construct shift vector for later off_site finite diff calculation
+       # shift = [torch.Tensor([delta, 0.0, 0.0]),
+       #          torch.Tensor([0.0, delta, 0.0]),
+       #          torch.Tensor([0.0, 0.0, delta])]
+        shift = torch.Tensor([[delta, 0.0, 0.0]
+                              ,[0.0, delta, 0.0]
+                             ,[0.0, 0.0, delta]])
+        #Loop over the unique interactions
+        for pair in unique_interactions:
+            start_pair = time.time()
+            a_idx = torch.nonzero((an_mat_a == pair).all(-1))
+            # Skip the loop if no interactions are found and ignore homo-atomic
+            # blocks in the lower triangle to avoid double computation.
+            if a_idx.nelement() == 0:
+                continue
+            elif pair[0] == pair[1]:
+                a_idx = a_idx[torch.where(a_idx[..., -2].le(a_idx[..., -1]))]
+            # Reshape atom index list to be more amenable to advanced indexing.
+            # This approach is a little messy but reduces memory on the cpu.
+            a_idx_l = a_idx[:, :-1].squeeze(1)
+            b_idx_l = a_idx[:, 3 - a_idx.shape[-1]::2].squeeze(1)
+            
+            # Get the matrix indices associated with the target blocks.
+            blk_idx = self.s_feed.atomic_block_indices(a_idx_l, b_idx_l, self.orbs)
+
+            # Identify the off-site blocks
+            off_site = ~self.s_feed._partition_blocks(a_idx_l, b_idx_l)
+
+            if any(off_site):
+                #create index for the force calc
+                if a_idx_l[off_site].dim() == 2:
+                    force_a_idx = (a_idx_l[off_site][:,0], a_idx_l[off_site][:, 1],)
+                    force_b_idx = (b_idx_l[off_site][:,0], b_idx_l[off_site][:, 1],)
+                else:
+                    force_a_idx = (a_idx_l[off_site], )
+                    force_b_idx = (b_idx_l[off_site], )
+
+
+                block_a_idx = torch.cat((a_idx_l[off_site], a_idx_l[off_site], a_idx_l[off_site]), dim=0)
+                print('##########################3')
+                print('block_a_idx')
+                print(block_a_idx)
+                block_b_idx = torch.cat((b_idx_l[off_site], b_idx_l[off_site], b_idx_l[off_site]), dim=0)
+                print('block_b_idx')
+                print(block_b_idx)
+
+                #calculated shifted off_sites in x,y,z direction
+                for coord in range(0,1):
                     start = time.time()
                     #Finite diff for overlap
                     # Calculate blocks shifted by the shift vector
@@ -1108,6 +1276,9 @@ class Dftb2(Calculator):
                             self.geometry, self.orbs,
                             shift_vec=shift[coord]
                             )
+                    print('blocks1_shift')
+                    print(blocks1_shift)
+                    #print(blocks1_shift.shape())
                     blocks2_shift = self.s_feed._off_site_blocks(
                             a_idx_l[off_site], b_idx_l[off_site],
                             self.geometry, self.orbs,

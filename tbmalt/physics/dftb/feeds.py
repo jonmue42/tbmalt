@@ -648,8 +648,24 @@ class SkFeed(IntegralFeed):
         # Inter-atomic distance and distance vector calculator.
         dist_vec = (geometry.positions[*bT2(atomic_idx_2)]
                     - geometry.positions[*bT2(atomic_idx_1)])
+        print('-----------------')
+        print('Atomic Idx 1')
+        print(atomic_idx_1)
+        print(atomic_idx_1.shape)
+        print('Atomic Idx 2')
+        print(atomic_idx_2)
+        print(atomic_idx_2.shape)
+        print('Dist Vec')
+        print(dist_vec)
+        print(dist_vec.shape)
+        print('Geometry')
+        print(geometry)
         if shift_vec is not None:
             dist_vec = dist_vec + shift_vec
+
+        print('Dist Vec')
+        print(dist_vec)
+        print('-----------------')
         dist = torch.linalg.norm(dist_vec, dim=-1)
         u_vec = (dist_vec.T / dist).T
 
