@@ -1103,45 +1103,71 @@ class Dftb2(Calculator):
 
 
                 block_a_idx = torch.cat((a_idx_l[off_site], a_idx_l[off_site], a_idx_l[off_site]), dim=0)
-                print('##########################3')
-                print('block_a_idx')
-                print(block_a_idx)
+                #print('##########################3')
+                #print('block_a_idx')
+                #print(block_a_idx)
                 block_b_idx = torch.cat((b_idx_l[off_site], b_idx_l[off_site], b_idx_l[off_site]), dim=0)
-                print('block_b_idx')
-                print(block_b_idx)
+                #print('block_b_idx')
+                #print(block_b_idx)
                 block_shift = shift.repeat_interleave(repeats=len(a_idx_l[off_site]), dim=0)
-                print('block_shift')
-                print(block_shift)
-
+                #print('block_shift')
+                #print(block_shift)
+                
+                # Overlap
                 blocks1_shift_xyz = self.s_feed._off_site_blocks(
                         block_a_idx, block_b_idx,
                         self.geometry, self.orbs,
                         shift_vec=block_shift
                         )
-                print('blocks1_shift_xyz')
-                print(blocks1_shift_xyz)
+                #print('blocks1_shift_xyz')
+                #print(blocks1_shift_xyz)
 
                 blocks2_shift_xyz = self.s_feed._off_site_blocks(
                         block_a_idx, block_b_idx,
                         self.geometry, self.orbs,
                         shift_vec=-block_shift
                         )
-                print('blocks2_shift_xyz')
-                print(blocks2_shift_xyz)
+                #print('blocks2_shift_xyz')
+                #print(blocks2_shift_xyz)
 
                 finite_diff_overlap_xyz = (blocks1_shift_xyz - blocks2_shift_xyz) / (2*delta)
-                print('finite_diff_overlap_xyz')
-                print(finite_diff_overlap_xyz)
-                print(finite_diff_overlap_xyz.shape)
-                #finite_diff_overlap_xyz = torch.reshape(finite_diff_overlap_xyz, shape=(3, len(a_idx_l[off_site]), -1))
+                #print('finite_diff_overlap_xyz')
+                #print(finite_diff_overlap_xyz)
+                #print(finite_diff_overlap_xyz.shape)
                 finite_diff_overlap_xyz = finite_diff_overlap_xyz.view(3, -1, *finite_diff_overlap_xyz.shape[-2:])
-                print('finite_diff_overlap_xyz')
-                print(finite_diff_overlap_xyz)
-                print(finite_diff_overlap_xyz.shape)
+                #print('finite_diff_overlap_xyz')
+                #print(finite_diff_overlap_xyz)
+                #print(finite_diff_overlap_xyz.shape)
+                # Hamiltonian
+                blocks1_shift_xyz = self.h_feed._off_site_blocks(
+                        block_a_idx, block_b_idx,
+                        self.geometry, self.orbs,
+                        shift_vec=block_shift
+                        )
+                #print('blocks1_shift_xyz')
+                #print(blocks1_shift_xyz)
+
+                blocks2_shift_xyz = self.h_feed._off_site_blocks(
+                        block_a_idx, block_b_idx,
+                        self.geometry, self.orbs,
+                        shift_vec=-block_shift
+                        )
+                #print('blocks2_shift_xyz')
+                #print(blocks2_shift_xyz)
+
+                finite_diff_hamiltonian_xyz = (blocks1_shift_xyz - blocks2_shift_xyz) / (2*delta)
+                #print('finite_diff_overlap_xyz')
+                #print(finite_diff_overlap_xyz)
+                #print(finite_diff_overlap_xyz.shape)
+                finite_diff_hamiltonian_xyz = finite_diff_hamiltonian_xyz.view(3, -1, *finite_diff_overlap_xyz.shape[-2:])
+                #print('finite_diff_overlap_xyz')
+                #print(finite_diff_overlap_xyz)
+                #print(finite_diff_overlap_xyz.shape)
+
 
                 #calculated shifted off_sites in x,y,z direction
                 for coord in range(0,3):
-                    start = time.time()
+                    #start = time.time()
                     #Finite diff for overlap
                     # Calculate blocks shifted by the shift vector
                    # blocks1_shift = self.s_feed._off_site_blocks(
@@ -1161,24 +1187,25 @@ class Dftb2(Calculator):
 
                    # finite_diff_overlap = (blocks1_shift - blocks2_shift) / (2*delta)
                     finite_diff_overlap = finite_diff_overlap_xyz[coord]
-                    print('finite_diff_overlap')
-                    print(finite_diff_overlap)
+                    #print('finite_diff_overlap')
+                    #print(finite_diff_overlap)
 
 
                     #Finite diff for core hamiltonian
                     # Calculate blocks shifted by the shift vector
-                    blocks1_shift = self.h_feed._off_site_blocks(
-                            a_idx_l[off_site], b_idx_l[off_site],
-                            self.geometry, self.orbs,
-                            shift_vec=shift[coord]
-                            )
-                    blocks2_shift = self.h_feed._off_site_blocks(
-                            a_idx_l[off_site], b_idx_l[off_site],
-                            self.geometry, self.orbs,
-                            shift_vec=-shift[coord]
-                            )
+                   # blocks1_shift = self.h_feed._off_site_blocks(
+                   #         a_idx_l[off_site], b_idx_l[off_site],
+                   #         self.geometry, self.orbs,
+                   #         shift_vec=shift[coord]
+                   #         )
+                   # blocks2_shift = self.h_feed._off_site_blocks(
+                   #         a_idx_l[off_site], b_idx_l[off_site],
+                   #         self.geometry, self.orbs,
+                   #         shift_vec=-shift[coord]
+                   #         )
 
-                    finite_diff_hamiltonian = (blocks1_shift - blocks2_shift) / (2*delta)
+                   # finite_diff_hamiltonian = (blocks1_shift - blocks2_shift) / (2*delta)
+                    finite_diff_hamiltonian = finite_diff_hamiltonian_xyz[coord]
 
                     # Calculate blocks of force contribution in val2 and then sum over in val
                     val2 = 2 * ( (density.mT[*blk_idx][off_site] * finite_diff_hamiltonian) - 
@@ -1189,11 +1216,11 @@ class Dftb2(Calculator):
                     val = val2.sum(dim=tuple(range(1, val2.dim()))).unsqueeze(-1)
                     force[..., :,coord:coord+1].index_put_(force_a_idx, -val, accumulate=True)
                     force[..., :,coord:coord+1].index_put_(force_b_idx, val, accumulate=True)
-                    end = time.time()
-                    print(f"Time for coord {coord}: {end-start}")
+                    #end = time.time()
+                    #print(f"Time for coord {coord}: {end-start}")
 
-                end_pair = time.time()
-                print(f"Time for pair {pair}: {end_pair-start_pair}")
+                #end_pair = time.time()
+                #print(f"Time for pair {pair}: {end_pair-start_pair}")
 
         return force
 
