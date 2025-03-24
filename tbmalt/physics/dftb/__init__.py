@@ -1065,12 +1065,6 @@ class Dftb2(Calculator):
         an_mat_a = self.orbs.atomic_number_matrix('atomic')
 
         # Construct shift vector for later off_site finite diff calculation
-       # shift = [torch.Tensor([delta, 0.0, 0.0]),
-       #          torch.Tensor([0.0, delta, 0.0]),
-       #          torch.Tensor([0.0, 0.0, delta])]
-       # shift = torch.Tensor([[delta, 0.0, 0.0]
-       #                       ,[0.0, delta, 0.0]
-       #                      ,[0.0, 0.0, delta]])
         shift = torch.Tensor([[delta, 0.0, 0.0],
                               [0.0, delta, 0.0],
                               [0.0, 0.0, delta],
@@ -1108,29 +1102,21 @@ class Dftb2(Calculator):
                     force_a_idx = (a_idx_l[off_site], )
                     force_b_idx = (b_idx_l[off_site], )
 
-
-                #block_a_idx = torch.cat((a_idx_l[off_site], a_idx_l[off_site], a_idx_l[off_site]), dim=0)
                 block_a_idx = torch.cat((a_idx_l[off_site], 
                                          a_idx_l[off_site], 
                                          a_idx_l[off_site], 
                                          a_idx_l[off_site],
                                          a_idx_l[off_site],
                                          a_idx_l[off_site]), dim=0)
-                #print('##########################3')
-                #print('block_a_idx')
-                #print(block_a_idx)
-                #block_b_idx = torch.cat((b_idx_l[off_site], b_idx_l[off_site], b_idx_l[off_site]), dim=0)
+                
                 block_b_idx = torch.cat((b_idx_l[off_site], 
                                          b_idx_l[off_site], 
                                          b_idx_l[off_site],
                                          b_idx_l[off_site],
                                          b_idx_l[off_site],
                                          b_idx_l[off_site]), dim=0)
-                #print('block_b_idx')
-                #print(block_b_idx)
+
                 block_shift = shift.repeat_interleave(repeats=len(a_idx_l[off_site]), dim=0)
-                #print('block_shift')
-                #print(block_shift)
                 
                 # Overlap
                 blocks1_shift_xyz = self.s_feed._off_site_blocks(
@@ -1138,53 +1124,16 @@ class Dftb2(Calculator):
                         self.geometry, self.orbs,
                         shift_vec=block_shift
                         )
-                #print('blocks1_shift_xyz')
-                #print(blocks1_shift_xyz[int(len(blocks1_shift_xyz)/2):])
-
-               # blocks2_shift_xyz = self.s_feed._off_site_blocks(
-               #         block_a_idx, block_b_idx,
-               #         self.geometry, self.orbs,
-               #         shift_vec=-block_shift
-               #         )
-                #print('blocks2_shift_xyz')
-                #print(blocks2_shift_xyz)
-
-                #finite_diff_overlap_xyz = (blocks1_shift_xyz - blocks2_shift_xyz) / (2*delta)
                 finite_diff_overlap_xyz = (blocks1_shift_xyz[:int(len(blocks1_shift_xyz)/2)] - blocks1_shift_xyz[int(len(blocks1_shift_xyz)/2):]) / (2*delta)
-                #print('finite_diff_overlap_xyz')
-                #print(finite_diff_overlap_xyz)
-                #print(finite_diff_overlap_xyz.shape)
                 finite_diff_overlap_xyz = finite_diff_overlap_xyz.view(3, -1, *finite_diff_overlap_xyz.shape[-2:])
-                #print('finite_diff_overlap_xyz')
-                #print(finite_diff_overlap_xyz)
-                #print(finite_diff_overlap_xyz.shape)
-                # Hamiltonian
+
                 blocks1_shift_xyz = self.h_feed._off_site_blocks(
                         block_a_idx, block_b_idx,
                         self.geometry, self.orbs,
                         shift_vec=block_shift
                         )
-                #print('blocks1_shift_xyz')
-                #print(blocks1_shift_xyz)
-
-               # blocks2_shift_xyz = self.h_feed._off_site_blocks(
-               #         block_a_idx, block_b_idx,
-               #         self.geometry, self.orbs,
-               #         shift_vec=-block_shift
-               #         )
-                #print('blocks2_shift_xyz')
-                #print(blocks2_shift_xyz)
-
-                #finite_diff_hamiltonian_xyz = (blocks1_shift_xyz - blocks2_shift_xyz) / (2*delta)
                 finite_diff_hamiltonian_xyz = (blocks1_shift_xyz[:int(len(blocks1_shift_xyz)/2)] - blocks1_shift_xyz[int(len(blocks1_shift_xyz)/2):]) / (2*delta)
-                #print('finite_diff_overlap_xyz')
-                #print(finite_diff_overlap_xyz)
-                #print(finite_diff_overlap_xyz.shape)
                 finite_diff_hamiltonian_xyz = finite_diff_hamiltonian_xyz.view(3, -1, *finite_diff_overlap_xyz.shape[-2:])
-                #print('finite_diff_overlap_xyz')
-                #print(finite_diff_overlap_xyz)
-                #print(finite_diff_overlap_xyz.shape)
-
 
                 #calculated shifted off_sites in x,y,z direction
                 for coord in range(0,3):
