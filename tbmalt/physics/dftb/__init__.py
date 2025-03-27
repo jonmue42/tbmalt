@@ -973,7 +973,7 @@ class Dftb2(Calculator):
         self._invr = value
 
     @property
-    def forces(self):
+    def forces_old(self):
         """Forces acting on the atoms calculated using the analytical expression.
 
         Note: This method still uses finite differences to calculated the gradient of the overlap and core hamiltonian."""
@@ -1014,7 +1014,7 @@ class Dftb2(Calculator):
         return force
 
     @property
-    def forces3(self):
+    def forces(self):
         """Forces acting on the atoms calculated using the analytical expression.
 
         Note: This method still uses finite differences to calculated the gradient of the overlap and core hamiltonian."""

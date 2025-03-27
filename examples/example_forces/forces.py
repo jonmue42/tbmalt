@@ -106,8 +106,8 @@ H2 = Geometry(torch.tensor([1, 1]),
 #geo = H2
 #geo = C2H2Au2S3
 #geo = H2O
-geo = H2O + H2 + CO2 + C2H2Au2S3
-#geo = H2
+#geo = H2O + H2 + CO2 + C2H2Au2S3
+geo = H2
 
 orbital_info = OrbitalInfo(geo.atomic_numbers, shell_dict, shell_resolved=False)
 
