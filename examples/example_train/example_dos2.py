@@ -1,13 +1,21 @@
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, Dataset
 
 import h5py
 import numpy as np
+import matplotlib.pyplot as plt
 import re
 
 from tbmalt.physics.dftb.feeds import SkFeed, SkfOccupationFeed, HubbardFeed, RepulsiveSplineFeed
 from tbmalt.common.maths.interpolation import CubicSpline
 from tbmalt.physics.dftb import Dftb2
+import tbmalt.common.maths as tbmalt_math
+from tbmalt.ml.loss_function import Loss, hellinger_loss
+from tbmalt import Geometry, OrbitalInfo
+from tbmalt.data.units import energy_units, length_units
+
+from tbmalt.physics.dftb.properties import dos
 
 #from tbmalt.io.loadhdf import LoadHdf
 
@@ -68,11 +76,9 @@ class SiliconDataset(Dataset):
                   }
         return system
 
-def load_data(path):
+def create_dataset(path):
     with h5py.File(path, 'r') as f:
         key = list(f.keys())[0]
-        print(key)
-        print(len(f[key].keys())/6)
         systems_idxs = len(f[key].keys())/6
 
         regex_pattern = r'(Si|C)'
@@ -82,7 +88,6 @@ def load_data(path):
                 'homo_lumo': torch.from_numpy(f[key]['1' + 'homo_lumo'][:]).unsqueeze(dim=0),
                 'eigenvalue': torch.from_numpy(f[key]['1' + 'eigenvalue'][:]).unsqueeze(dim=0),
                 }
-        print(data)
         for idx in range(2, int(systems_idxs) + 1):#index:
             data['number'].append(data['number'][0])
             for group in ['position', 'lattice vector', 'homo_lumo', 'eigenvalue']:
@@ -94,9 +99,83 @@ def load_data(path):
                               data['homo_lumo'],
                               data['eigenvalue']
                               )
-            
+
+dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+
+## Creating DOS
+#ref_ev = dataset_Si63v_relax_pbe[0]['eigenvalue']
+#size_train = 1
+#energies = torch.linspace(-18, 5, 500).repeat(size_train, 1)
+#dos_ref = dos(ref_ev, energies, 0.09)
+#dos_ref_mean = dos_ref.mean(dim=0)
+#plt.plot(energies[0], dos_ref_mean, '-', linewidth=1.0)
+#plt.xlim((-18.2, 5.2))
+#plt.ylim((-1, 70))
+#plt.show()
 
 
-            
 
-load_data('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+
+
+
+# Define Training
+#-----------------------------------------------------------
+
+# Hellinger Loss function def
+loss_func = hellinger_loss
+
+#delegates
+def prediction_data_delegate(calculator, targets, **kwargs):
+    predictions = dict()
+    fermi_dftb = calculator.homo_lumo.mean(dim=-1) / energy_units['ev']
+    energies_dftb = fermi_dftb.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
+    dos_dftb = dos(calculator.eigenvalue / energy_units['ev'], energies_dftb, 0.09)
+
+    predictions['dos'] = dos_dftb
+    return predictions
+
+def reference_data_delegate(calculator, targets, **kwargs):
+    reference = dict()
+    ref_ev = targets['eigenvalues']
+    fermi_train = targets['homo_lumos'].mean(dim=-1)
+    energies_train = fermi_train.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(training_size, 0)
+    dos_ref = dos((ref_ev), energies_train, 0.09)
+
+    reference['dos'] = dos_ref
+    return reference
+
+# Define Loss entity
+loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_functions=loss_func, reduction='sum')
+
+# Define params to optimize (in this case H and S offsites)
+h_var = [val.coefficients for key, val in h_feed._off_sites.items()]
+s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
+params = h_var + s_var
+
+# optimizer
+learning_rate = 0.00005
+optimizer = torch.optim.Adam(params=params, lr=learning_rate)
+
+#Dftb forward pass calc
+def dftb_results(atomic_numbers, positions, lattice_vector):
+    geometry = Geometry(atomic_numbers,
+                        positions, 
+                        lattice_vector,
+                        units='a'
+                        )
+    orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
+    #Build new feeds
+
+
+
+# Training
+#---------------------------------------------------
+
+for epoch in range(number_of_epochs):
+    print(f"Epoch {epoch+1}/{number_of_epochs}")
+    _loss = 0
+
+    optimizer.step()
+
+
+
