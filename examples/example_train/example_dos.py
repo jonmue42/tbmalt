@@ -52,7 +52,8 @@ species = species[species != 0].tolist()
 # 1.2: Model settings
 # -------------------
 # Location at which the DFTB parameter set database is located
-parameter_db_path = './siband.hdf5'
+#parameter_db_path = './siband.hdf5'
+parameter_db_path = './data _tbmaltpaper/siband.hdf5'
 
 # Should fitting be performed here?
 fit_model = True
@@ -71,7 +72,8 @@ lr = 0.000005
 loss_function = 'Hellinger'
 
 # Location of a file storing the properties that will be fit to.
-target_path = './dataset_dos.h5'
+#target_path = './dataset_dos.h5'
+target_path = './data _tbmaltpaper/dataset_dos.h5'
 
 # Choose which training and testing dataset to be loaded
 # To run training and testing using the rattled type silicon systems, target_run
@@ -85,11 +87,11 @@ points = torch.linspace(-3.3, 1.6, 491) if target_run != 'run_transfer' else\
 
 # Load the Hamiltonian feed model
 h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian',
-                              interpolation='spline', requires_grad=True)
+                              interpolation=CubicSpline, requires_grad_offsite=True)
 
 # Load the overlap feed model
 s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap',
-                              interpolation='spline', requires_grad=True)
+                              interpolation=CubicSpline, requires_grad_offsite=True)
 
 # Load the occupation feed object
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)

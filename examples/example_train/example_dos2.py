@@ -30,9 +30,9 @@ shell_dict = {14: [0, 1, 2]}
 species = [14]
 
 # Feeds
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline, requires_grad_offsite=True)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline, requires_grad_offsite=True, requires_grad_onsite=True,)
 
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline, requires_grad_offsite=True)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -46,7 +46,7 @@ mix_params = {'mix_param': 0.2,
               }
 kwargs = {}
 kwargs['mix_params'] = mix_params
-dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, **kwargs)
+dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, filling_temp=None, **kwargs)
 
 # Prepare Data
 #---------------------------------------------------
@@ -93,7 +93,7 @@ def create_dataset(path):
             for group in ['position', 'lattice vector', 'homo_lumo', 'eigenvalue']:
                 data[group] = torch.cat((data[group], torch.from_numpy(f[key][str(idx) + group][:]).unsqueeze(dim=0)), dim=0)
 
-        return SiliconDataset(data['number'], 
+        return SiliconDataset(torch.IntTensor(data['number']),
                               data['position'], 
                               data['lattice vector'], 
                               data['homo_lumo'],
@@ -101,6 +101,27 @@ def create_dataset(path):
                               )
 
 dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+
+#prepare training data
+training_size = 1
+indice = torch.arange(training_size).tolist()
+
+data_train = dataset_Si63v_relax_pbe[: training_size]
+
+ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
+#reference data
+targets = {'eigenvalues': ref_ev,
+           'homo_lumos': ref_hl
+           }
+
+# Construct geometry
+geometry = Geometry(data_train['number'], 
+                    data_train['position'],
+                    lattice_vector= data_train['latvec'],
+                    units='a',
+                    #cutoff=
+                    )
+orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict)
 
 ## Creating DOS
 #ref_ev = dataset_Si63v_relax_pbe[0]['eigenvalue']
@@ -148,6 +169,10 @@ def reference_data_delegate(calculator, targets, **kwargs):
 loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_functions=loss_func, reduction='sum')
 
 # Define params to optimize (in this case H and S offsites)
+for key in h_feed._off_sites.keys():
+    h_feed._off_sites[key].coefficients.requires_grad_(True)
+    s_feed._off_sites[key].coefficients.requires_grad_(True)
+
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()]
 s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
 params = h_var + s_var
@@ -156,15 +181,7 @@ params = h_var + s_var
 learning_rate = 0.00005
 optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
-#Dftb forward pass calc
-def dftb_results(atomic_numbers, positions, lattice_vector):
-    geometry = Geometry(atomic_numbers,
-                        positions, 
-                        lattice_vector,
-                        units='a'
-                        )
-    orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
-    #Build new feeds
+
 
 
 
@@ -174,8 +191,14 @@ def dftb_results(atomic_numbers, positions, lattice_vector):
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     _loss = 0
-
+    dftb_calculator(geometry, orbs)
+    total_loss, _ = loss_entity(dftb_calculator, targets)
+    _loss += total_loss
+    optimizer.zero_grad()
+    _loss.retain_grad()
+    _loss.backward(retain_graph=True)
     optimizer.step()
+    print(f"Loss: {_loss.item()}")
 
 
 
