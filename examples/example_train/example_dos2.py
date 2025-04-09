@@ -30,9 +30,9 @@ shell_dict = {14: [0, 1, 2]}
 species = [14]
 
 # Feeds
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline, requires_grad_offsite=True, requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -46,7 +46,7 @@ mix_params = {'mix_param': 0.2,
               }
 kwargs = {}
 kwargs['mix_params'] = mix_params
-dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, filling_temp=None, **kwargs)
+dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, **kwargs)
 
 # Prepare Data
 #---------------------------------------------------
@@ -102,11 +102,16 @@ def create_dataset(path):
 
 dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
 
+# Energy window for dos sampling
+points = torch.linspace(-4.6, 6.9, 1151)
+
 #prepare training data
 training_size = 1
 indice = torch.arange(training_size).tolist()
 
-data_train = dataset_Si63v_relax_pbe[: training_size]
+data_train = dataset_Si63v_relax_pbe[0]#[: training_size]
+print('@@@@@@@@@@2')
+print(data_train['number'])
 
 ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
 #reference data
@@ -114,30 +119,26 @@ targets = {'eigenvalues': ref_ev,
            'homo_lumos': ref_hl
            }
 
+# Create Plot of training DOS reference
+energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
+dos_plot = dos((targets['eigenvalues']), energies_plot, 0.09)
+dos_plot_mean = dos_plot.mean(dim=0)
+fermi_train_plot = targets['homo_lumos'].mean(dim=-1)
+energies_train_plot = fermi_train_plot.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(training_size, 0)
+
+plt.plot(energies_plot[0] - fermi_train_plot.mean(dim=0), dos_plot_mean, linewidth=1.5)
+plt.fill_between(energies_train_plot.mean(dim=0) - fermi_train_plot.mean(dim=0), -3, 60, alpha=0.2)
+plt.show()
 # Construct geometry
 geometry = Geometry(data_train['number'], 
                     data_train['position'],
                     lattice_vector= data_train['latvec'],
                     units='a',
-                    #cutoff=
+                    cutoff=torch.tensor([18.0])/length_units['angstrom']
                     )
-orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict)
-
-## Creating DOS
-#ref_ev = dataset_Si63v_relax_pbe[0]['eigenvalue']
-#size_train = 1
-#energies = torch.linspace(-18, 5, 500).repeat(size_train, 1)
-#dos_ref = dos(ref_ev, energies, 0.09)
-#dos_ref_mean = dos_ref.mean(dim=0)
-#plt.plot(energies[0], dos_ref_mean, '-', linewidth=1.0)
-#plt.xlim((-18.2, 5.2))
-#plt.ylim((-1, 70))
-#plt.show()
-
-
-
-
-
+print(geometry.atomic_numbers)
+orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
+print(orbs)
 
 # Define Training
 #-----------------------------------------------------------
@@ -187,11 +188,11 @@ optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
 # Training
 #---------------------------------------------------
-
+number_of_epochs = 10
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     _loss = 0
-    dftb_calculator(geometry, orbs)
+    dftb_calculator(geometry, orbs, grad_mode='direct')
     total_loss, _ = loss_entity(dftb_calculator, targets)
     _loss += total_loss
     optimizer.zero_grad()
