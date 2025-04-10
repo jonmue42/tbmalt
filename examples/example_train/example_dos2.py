@@ -46,7 +46,7 @@ mix_params = {'mix_param': 0.2,
               }
 kwargs = {}
 kwargs['mix_params'] = mix_params
-dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, **kwargs)
+dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
 
 # Prepare Data
 #---------------------------------------------------
@@ -121,14 +121,26 @@ targets = {'eigenvalues': ref_ev,
 
 # Create Plot of training DOS reference
 energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
-dos_plot = dos((targets['eigenvalues']), energies_plot, 0.09)
-dos_plot_mean = dos_plot.mean(dim=0)
+dos_ref_plot = dos((targets['eigenvalues']), energies_plot, 0.09)
+dos_ref_plot_mean = dos_ref_plot.mean(dim=0)
+dos_ref_plot_std = dos_ref_plot.std(dim=0)
 fermi_train_plot = targets['homo_lumos'].mean(dim=-1)
 energies_train_plot = fermi_train_plot.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(training_size, 0)
 
-plt.plot(energies_plot[0] - fermi_train_plot.mean(dim=0), dos_plot_mean, linewidth=1.5)
-plt.fill_between(energies_train_plot.mean(dim=0) - fermi_train_plot.mean(dim=0), -3, 60, alpha=0.2)
+plt.plot(energies_plot[0], dos_ref_plot_mean, '-', linewidth=1.0)
+plt.fill_between(energies_plot[0], dos_ref_plot_mean + dos_ref_plot_std, dos_ref_plot_mean - dos_ref_plot_std, alpha=0.5, facecolor='darkred')
+plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
+
+plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on', zorder=10)
+plt.xlim((-18.2, 5.2))
+plt.ylim((-1, 70))
+plt.xlabel("Energy [eV]", fontsize=14)
+plt.ylabel("DOS", fontsize=14)
+
+#plt.plot(energies_plot[0] - fermi_train_plot.mean(dim=0), dos_plot_mean, linewidth=1.5)
+#plt.fill_between(energies_train_plot.mean(dim=0) - fermi_train_plot.mean(dim=0), -3, 60, alpha=0.2)
 plt.show()
+
 # Construct geometry
 geometry = Geometry(data_train['number'], 
                     data_train['position'],
@@ -150,8 +162,9 @@ loss_func = hellinger_loss
 def prediction_data_delegate(calculator, targets, **kwargs):
     predictions = dict()
     fermi_dftb = calculator.homo_lumo.mean(dim=-1) / energy_units['ev']
+    n_batch = 1
     energies_dftb = fermi_dftb.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
-    dos_dftb = dos(calculator.eigenvalue / energy_units['ev'], energies_dftb, 0.09)
+    dos_dftb = dos(calculator.eig_values / energy_units['ev'], energies_dftb, 0.09)
 
     predictions['dos'] = dos_dftb
     return predictions
@@ -174,7 +187,7 @@ for key in h_feed._off_sites.keys():
     h_feed._off_sites[key].coefficients.requires_grad_(True)
     s_feed._off_sites[key].coefficients.requires_grad_(True)
 
-h_var = [val.coefficients for key, val in h_feed._off_sites.items()]
+h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
 s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
 params = h_var + s_var
 
@@ -182,13 +195,9 @@ params = h_var + s_var
 learning_rate = 0.00005
 optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
-
-
-
-
 # Training
 #---------------------------------------------------
-number_of_epochs = 10
+number_of_epochs = 30
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     _loss = 0
@@ -200,6 +209,71 @@ for epoch in range(number_of_epochs):
     _loss.backward(retain_graph=True)
     optimizer.step()
     print(f"Loss: {_loss.item()}")
+
+#Plotting of result
+
+#Reference
+ref_hl_plot = targets['homo_lumos']
+ref_ev_plot = targets['eigenvalues']
+ref_fermi_plot = targets['homo_lumos'].mean(dim=-1)
+ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
+ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, 0.09)
+
+#Original DFTB calc
+h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
+s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
+# Calculator
+mix_params = {'mix_param': 0.2, 
+              'init_mix_param': 0.2,
+              'generations': 3,
+              'tolerance': 1e-10
+              }
+kwargs = {}
+kwargs['mix_params'] = mix_params
+dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
+dftb_calculator_o(geometry, orbs)
+
+hl_dftb = getattr(dftb_calculator_o, 'homo_lumo').detach() / energy_units['ev']
+fermi_dftb = hl_dftb.mean(-1)
+eigval_dftb = dftb_calculator_o.eig_values.detach() / energy_units['ev']
+dos_dftb = dos((eigval_dftb), energies_plot, 0.09)
+
+# Results before training
+plt.plot((ref_energies_plot - ref_fermi_plot).squeeze(0), ref_dos_plot.squeeze(0), label='DFT')
+plt.plot((ref_energies_plot - fermi_dftb).squeeze(0), dos_dftb.squeeze(0), label='siband-1-1')
+plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
+
+plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on')
+
+plt.xlim((-18.2, 5.2))
+plt.ylim((-1, 70))
+
+plt.rcParams["font.family"] = "arial"
+plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
+plt.ylabel('DOS [states / eV]', fontsize=15)
+plt.title("Before training", fontsize=13)
+plt.legend(fontsize=13)
+plt.show()
+
+# Prediction after training
+hl_pred = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
+fermi_pred = hl_pred.mean(-1)
+eigval_pred = dftb_calculator.eig_values.detach() / energy_units['ev']
+dos_pred = dos((eigval_pred), ref_energies_plot, 0.09)
+plt.plot((ref_energies_plot - ref_fermi_plot).squeeze(0), ref_dos_plot.squeeze(0), label='DFT')
+plt.plot((ref_energies_plot - fermi_pred).squeeze(0), dos_pred.squeeze(0), label='spline')
+#plt.xlim(-3.5, 2)
+#plt.ylim(-2, 40)
+plt.tick_params(direction='in', labelsize='13', width=1.1, top='on',
+                right='on')
+plt.rcParams["font.family"] = "arial"
+plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
+plt.ylabel('DOS [states / eV]', fontsize=15)
+plt.title("After training", fontsize=13)
+plt.legend(fontsize=13)
+plt.show()
+
+
 
 
 
