@@ -100,8 +100,8 @@ def create_dataset(path):
                               data['eigenvalue']
                               )
 
-#dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
-dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+#dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
 
 # Energy window for dos sampling
 #points = torch.linspace(-4.6, 6.9, 1151)
@@ -111,8 +111,8 @@ points = torch.linspace(-3.0, 2.0, 501)
 training_size = 1
 indice = torch.arange(training_size).tolist()
 
-#data_train = dataset_Si63v_relax_pbe[0]#[: training_size]
-data_train = dataset_Si63v_hse_101#[: training_size]
+data_train = dataset_Si63v_relax_pbe#[0]#[: training_size]
+#data_train = dataset_Si63v_hse_101#[: training_size]
 dataloader_train = DataLoader(data_train, batch_size=2)
 print('DATALOADER')
 #for batch, x in enumerate(dataloader_train):
