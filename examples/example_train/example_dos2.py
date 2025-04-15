@@ -100,20 +100,29 @@ def create_dataset(path):
                               data['eigenvalue']
                               )
 
-dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+#dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
 
 # Energy window for dos sampling
-points = torch.linspace(-4.6, 6.9, 1151)
+#points = torch.linspace(-4.6, 6.9, 1151)
+points = torch.linspace(-3.0, 2.0, 501)
 
 #prepare training data
 training_size = 1
 indice = torch.arange(training_size).tolist()
 
-data_train = dataset_Si63v_relax_pbe[0]#[: training_size]
+#data_train = dataset_Si63v_relax_pbe[0]#[: training_size]
+data_train = dataset_Si63v_hse_101#[: training_size]
+dataloader_train = DataLoader(data_train, batch_size=2)
+print('DATALOADER')
+#for batch, x in enumerate(dataloader_train):
+#    print(x)
 print('@@@@@@@@@@2')
-print(data_train['number'])
+#print(data_train['numbers'])
+print(data_train.numbers)
 
-ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
+#ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
+ref_ev, ref_hl = (data_train.eigenvalues, data_train.homo_lumos)
 #reference data
 targets = {'eigenvalues': ref_ev,
            'homo_lumos': ref_hl
@@ -121,6 +130,7 @@ targets = {'eigenvalues': ref_ev,
 
 # Create Plot of training DOS reference
 energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
+#energies_plot = torch.linspace(-3, 2, 500).repeat(training_size, 1)
 dos_ref_plot = dos((targets['eigenvalues']), energies_plot, 0.09)
 dos_ref_plot_mean = dos_ref_plot.mean(dim=0)
 dos_ref_plot_std = dos_ref_plot.std(dim=0)
@@ -133,7 +143,9 @@ plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
 
 plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on', zorder=10)
 plt.xlim((-18.2, 5.2))
+#plt.xlim((-3.0, 2.0))
 plt.ylim((-1, 70))
+#plt.ylim((-1, 60))
 plt.xlabel("Energy [eV]", fontsize=14)
 plt.ylabel("DOS", fontsize=14)
 
@@ -142,15 +154,15 @@ plt.ylabel("DOS", fontsize=14)
 plt.show()
 
 # Construct geometry
-geometry = Geometry(data_train['number'], 
-                    data_train['position'],
-                    lattice_vector= data_train['latvec'],
-                    units='a',
-                    cutoff=torch.tensor([18.0])/length_units['angstrom']
-                    )
-print(geometry.atomic_numbers)
-orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
-print(orbs)
+#geometry = Geometry(data_train['number'], 
+#                    data_train['position'],
+#                    lattice_vector= data_train['latvec'],
+#                    units='a',
+#                    cutoff=torch.tensor([18.0])/length_units['angstrom']
+#                    )
+#print(geometry.atomic_numbers)
+#orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
+#print(orbs)
 
 # Define Training
 #-----------------------------------------------------------
@@ -196,21 +208,51 @@ learning_rate = 0.00005
 optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
 # Training
-#---------------------------------------------------
+#--------------------------------------------------
+def train_loop(dataloader, optimizer, dftb_calculator):
+    for batch, data in enumerate(dataloader):
+        loss = 0
+        optimizer.zero_grad()
+        targets = {'eigenvalues': data['eigenvalue'],
+                   'homo_lumos': data['homo_lumo']
+                   }
+
+        geometry = Geometry(data['number'], 
+                    data['position'],
+                    lattice_vector= data['latvec'],
+                    units='a',
+                    cutoff=torch.tensor([18.0])/length_units['angstrom']
+                    )
+        orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
+
+        dftb_calculator(geometry, orbs, grad_mode='direct')
+
+        loss, _ = loss_entity(dftb_calculator, targets)
+        loss.retain_grad()
+        loss.backward(retain_graph=True)
+        optimizer.step()
+        print(f"Loss: {loss.item()}")
+
 number_of_epochs = 30
+#for epoch in range(number_of_epochs):
+#    print(f"Epoch {epoch+1}/{number_of_epochs}")
+#    _loss = 0
+#    dftb_calculator(geometry, orbs, grad_mode='direct')
+#    total_loss, _ = loss_entity(dftb_calculator, targets)
+#    _loss += total_loss
+#    optimizer.zero_grad()
+#    _loss.retain_grad()
+#    _loss.backward(retain_graph=True)
+#    optimizer.step()
+#    print(f"Loss: {_loss.item()}")
+
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
-    _loss = 0
-    dftb_calculator(geometry, orbs, grad_mode='direct')
-    total_loss, _ = loss_entity(dftb_calculator, targets)
-    _loss += total_loss
-    optimizer.zero_grad()
-    _loss.retain_grad()
-    _loss.backward(retain_graph=True)
-    optimizer.step()
-    print(f"Loss: {_loss.item()}")
+    train_loop(dataloader_train, optimizer, dftb_calculator)
+
 
 #Plotting of result
+#---------------------------------------------------
 
 #Reference
 ref_hl_plot = targets['homo_lumos']
