@@ -100,25 +100,28 @@ def create_dataset(path):
                               data['eigenvalue']
                               )
 
-#dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
-dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+#dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+#dataset_Si65_interstitial_hse = create_dataset('./data_wenbo/dataset/fhi-aims_si65_interstitial_hse.hdf')
 
 # Energy window for dos sampling
 #points = torch.linspace(-4.6, 6.9, 1151)
 points = torch.linspace(-3.0, 2.0, 501)
 
 #prepare training data
-training_size = 3
+training_size = 1
 indice = torch.arange(training_size).tolist()
 
-#data_train = dataset_Si63v_relax_pbe#[0]#[: training_size]
-#data_train = dataset_Si63v_hse_101
-data_subset_train = random_split(dataset_Si63v_hse_101, [3, 98])[0]
+#data_subset_train = random_split(dataset_Si63v_hse_101, [2, 99])[0]
+data_subset_train = random_split(dataset_Si63v_relax_pbe, [1, 0])[0]
+#data_subset_train = random_split(dataset_Si65_interstitial_hse, [0.5, 0.5])[0]
 train_indeces = data_subset_train.indices
-data_train = dataset_Si63v_hse_101[train_indeces]
+#data_train = dataset_Si63v_hse_101[train_indeces]
+data_train = dataset_Si63v_relax_pbe[train_indeces]
+#data_train = dataset_Si65_interstitial_hse[train_indeces]
 print('DATATRAIN')
 print(data_train['number'])
-n_batch = 2
+n_batch = 1
 dataloader_train = DataLoader(data_subset_train, batch_size=n_batch)
 print('DATALOADER')
 #for batch, x in enumerate(dataloader_train):
@@ -146,13 +149,15 @@ energies_train_plot = fermi_train_plot.unsqueeze(-1) + points.unsqueeze(0).repea
 plt.plot((energies_plot - fermi_train_plot.unsqueeze(-1))[0], dos_ref_plot_mean, '-', linewidth=1.0)
 plt.fill_between((energies_plot - fermi_train_plot.unsqueeze(-1))[0], dos_ref_plot_mean + dos_ref_plot_std, dos_ref_plot_mean - dos_ref_plot_std, alpha=0.5, facecolor='darkred')
 #plt.fill_between(energies_plot[0], dos_ref_plot_mean + dos_ref_plot_std, dos_ref_plot_mean - dos_ref_plot_std, alpha=0.5, facecolor='darkred')
-plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
+#plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
+plt.fill_between(points, -3, 80, alpha=0.2)
 
 plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on', zorder=10)
-plt.xlim((-3, 2))
+plt.xlim((-4, 7))
 plt.ylim((-1, 70))
-plt.xlabel("Energy [eV]", fontsize=14)
+plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=14)
 plt.ylabel("DOS", fontsize=14)
+print(points)
 plt.show()
 
 # Define Training
@@ -223,7 +228,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         optimizer.step()
         print(f"Loss: {loss.item()}")
 
-number_of_epochs = 2
+number_of_epochs = 10
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
@@ -291,10 +296,10 @@ plt.fill_between((ref_energies_plot - fermi_dftb)[0],
 
 plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on')
 
-plt.xlim((-18.2, 5.2))
-plt.ylim((-1, 70))
+#plt.xlim((-18.2, 5.2))
+plt.xlim((points[0], points[-1]))
+#plt.ylim((-1, 70))
 
-plt.rcParams["font.family"] = "arial"
 plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
 plt.ylabel('DOS [states / eV]', fontsize=15)
 plt.title("Before training", fontsize=13)
@@ -323,6 +328,7 @@ plt.fill_between((ref_energies_plot - fermi_pred)[0],
                  alpha=0.5)
 
 #plt.xlim(-3.5, 2)
+plt.xlim((points[0], points[-1]))
 #plt.ylim(-2, 40)
 plt.tick_params(direction='in', labelsize='13', width=1.1, top='on',
                 right='on')
