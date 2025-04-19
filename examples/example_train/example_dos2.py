@@ -100,8 +100,8 @@ def create_dataset(path):
                               data['eigenvalue']
                               )
 
-dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
-#dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+#dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
+dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
 #dataset_Si65_interstitial_hse = create_dataset('./data_wenbo/dataset/fhi-aims_si65_interstitial_hse.hdf')
 
 # Energy window for dos sampling
@@ -109,15 +109,15 @@ dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_re
 points = torch.linspace(-3.0, 2.0, 501)
 
 #prepare training data
-training_size = 1
+training_size = 2
 indice = torch.arange(training_size).tolist()
 
-#data_subset_train = random_split(dataset_Si63v_hse_101, [2, 99])[0]
-data_subset_train = random_split(dataset_Si63v_relax_pbe, [1, 0])[0]
+data_subset_train = random_split(dataset_Si63v_hse_101, [2, 99])[0]
+#data_subset_train = random_split(dataset_Si63v_relax_pbe, [1, 0])[0]
 #data_subset_train = random_split(dataset_Si65_interstitial_hse, [0.5, 0.5])[0]
 train_indeces = data_subset_train.indices
-#data_train = dataset_Si63v_hse_101[train_indeces]
-data_train = dataset_Si63v_relax_pbe[train_indeces]
+data_train = dataset_Si63v_hse_101[train_indeces]
+#data_train = dataset_Si63v_relax_pbe[train_indeces]
 #data_train = dataset_Si65_interstitial_hse[train_indeces]
 print('DATATRAIN')
 print(data_train['number'])
@@ -307,6 +307,10 @@ plt.legend(fontsize=13)
 plt.show()
 
 # Prediction after training
+
+#Run calculation again to calculate all training systems and not just the last batch from the training loop
+dftb_calculator(geometry_o, orbs_o)
+
 hl_pred = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
 fermi_pred = hl_pred.mean(-1).unsqueeze(-1)
 eigval_pred = dftb_calculator.eig_values.detach() / energy_units['ev']
