@@ -19,6 +19,8 @@ from tbmalt.physics.dftb.properties import dos
 
 #from tbmalt.io.loadhdf import LoadHdf
 
+from silicon_dataset import SiliconDataset
+
 
 torch.set_default_dtype(torch.float64)
 
@@ -27,7 +29,9 @@ torch.set_default_dtype(torch.float64)
 parameter_db_path = './data _tbmaltpaper/siband.hdf5'
 
 shell_dict = {14: [0, 1, 2]}
-species = [14]
+#shell_dict = {14: [0, 1, 2], 6: [0, 1, 3]}
+#species = [14, 6] # Si, C
+species = [14] # Si, C
 
 # Feeds
 h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
@@ -50,59 +54,63 @@ dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True,
 
 # Prepare Data
 #---------------------------------------------------
-class SiliconDataset(Dataset):
-    def __init__(self, numbers, positions, latvecs, homo_lumos, eigenvalues):
-        self.numbers = numbers
-        self.positions = positions
-        self.latvecs = latvecs
-        self.homo_lumos = homo_lumos
-        self.eigenvalues = eigenvalues
-
-    def __len__(self):
-        return len(self.numbers)
-
-    def __getitem__(self, index):
-        number = self.numbers[index] #atomic number
-        position = self.positions[index]
-        latvec = self.latvecs[index]
-        homo_lumo = self.homo_lumos[index]
-        eigenvalue = self.eigenvalues[index]
-        system = {"number": number, 
-                  "position": position, 
-                  "latvec": latvec, 
-                  "homo_lumo": homo_lumo, 
-                  "eigenvalue": eigenvalue, 
-                  "index": index
-                  }
-        return system
-
-def create_dataset(path):
-    with h5py.File(path, 'r') as f:
-        key = list(f.keys())[0]
-        systems_idxs = len(f[key].keys())/6
-
-        regex_pattern = r'(Si|C)'
-        data = {'number': [[14 if atom == "Si" else 6 for atom in re.findall(regex_pattern,key)]],
-                'position': torch.from_numpy(f[key]['1' + 'position'][:]).unsqueeze(dim=0),
-                'lattice vector': torch.from_numpy(f[key]['1' + 'lattice vector'][:]).unsqueeze(dim=0),
-                'homo_lumo': torch.from_numpy(f[key]['1' + 'homo_lumo'][:]).unsqueeze(dim=0),
-                'eigenvalue': torch.from_numpy(f[key]['1' + 'eigenvalue'][:]).unsqueeze(dim=0),
-                }
-        for idx in range(2, int(systems_idxs) + 1):#index:
-            data['number'].append(data['number'][0])
-            for group in ['position', 'lattice vector', 'homo_lumo', 'eigenvalue']:
-                data[group] = torch.cat((data[group], torch.from_numpy(f[key][str(idx) + group][:]).unsqueeze(dim=0)), dim=0)
-
-        return SiliconDataset(torch.IntTensor(data['number']),
-                              data['position'], 
-                              data['lattice vector'], 
-                              data['homo_lumo'],
-                              data['eigenvalue']
-                              )
-
+#class SiliconDataset(Dataset):
+#    def __init__(self, numbers, positions, latvecs, homo_lumos, eigenvalues):
+#        self.numbers = numbers
+#        self.positions = positions
+#        self.latvecs = latvecs
+#        self.homo_lumos = homo_lumos
+#        self.eigenvalues = eigenvalues
+#
+#    def __len__(self):
+#        return len(self.numbers)
+#
+#    def __getitem__(self, index):
+#        number = self.numbers[index] #atomic number
+#        position = self.positions[index]
+#        latvec = self.latvecs[index]
+#        homo_lumo = self.homo_lumos[index]
+#        eigenvalue = self.eigenvalues[index]
+#        system = {"number": number, 
+#                  "position": position, 
+#                  "latvec": latvec, 
+#                  "homo_lumo": homo_lumo, 
+#                  "eigenvalue": eigenvalue, 
+#                  "index": index
+#                  }
+#        return system
+#
+#def create_dataset(path):
+#    with h5py.File(path, 'r') as f:
+#        key = list(f.keys())[0]
+#        systems_idxs = len(f[key].keys())/6
+#
+#        regex_pattern = r'(Si|C)'
+#        data = {'number': [[14 if atom == "Si" else 6 for atom in re.findall(regex_pattern,key)]],
+#                'position': torch.from_numpy(f[key]['1' + 'position'][:]).unsqueeze(dim=0),
+#                'lattice vector': torch.from_numpy(f[key]['1' + 'lattice vector'][:]).unsqueeze(dim=0),
+#                'homo_lumo': torch.from_numpy(f[key]['1' + 'homo_lumo'][:]).unsqueeze(dim=0),
+#                'eigenvalue': torch.from_numpy(f[key]['1' + 'eigenvalue'][:]).unsqueeze(dim=0),
+#                }
+#        for idx in range(2, int(systems_idxs) + 1):#index:
+#            data['number'].append(data['number'][0])
+#            for group in ['position', 'lattice vector', 'homo_lumo', 'eigenvalue']:
+#                data[group] = torch.cat((data[group], torch.from_numpy(f[key][str(idx) + group][:]).unsqueeze(dim=0)), dim=0)
+#
+#        return SiliconDataset(torch.IntTensor(data['number']),
+#                              data['position'], 
+#                              data['lattice vector'], 
+#                              data['homo_lumo'],
+#                              data['eigenvalue']
+#                              )
+#
 #dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
-dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+#dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+dataset_Si63v_hse_101 =  SiliconDataset.create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+#dataset_Si32c31_hse_82 = create_dataset('./data_wenbo/dataset/fhi-aims_si32c31_hse_82.hdf')
 #dataset_Si65_interstitial_hse = create_dataset('./data_wenbo/dataset/fhi-aims_si65_interstitial_hse.hdf')
+
+dataset = dataset_Si63v_hse_101
 
 # Energy window for dos sampling
 #points = torch.linspace(-4.6, 6.9, 1151)
@@ -112,11 +120,11 @@ points = torch.linspace(-3.0, 2.0, 501)
 training_size = 2
 indice = torch.arange(training_size).tolist()
 
-data_subset_train = random_split(dataset_Si63v_hse_101, [2, 99])[0]
+data_subset_train = random_split(dataset, [2, 99])[0]
 #data_subset_train = random_split(dataset_Si63v_relax_pbe, [1, 0])[0]
 #data_subset_train = random_split(dataset_Si65_interstitial_hse, [0.5, 0.5])[0]
 train_indeces = data_subset_train.indices
-data_train = dataset_Si63v_hse_101[train_indeces]
+data_train = dataset[train_indeces]
 #data_train = dataset_Si63v_relax_pbe[train_indeces]
 #data_train = dataset_Si65_interstitial_hse[train_indeces]
 print('DATATRAIN')
