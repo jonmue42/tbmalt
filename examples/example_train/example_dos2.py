@@ -20,6 +20,7 @@ from tbmalt.physics.dftb.properties import dos
 #from tbmalt.io.loadhdf import LoadHdf
 
 from silicon_dataset import SiliconDataset
+from plot_dos import plot_dos, plot_training_ref
 
 
 torch.set_default_dtype(torch.float64)
@@ -54,56 +55,7 @@ dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True,
 
 # Prepare Data
 #---------------------------------------------------
-#class SiliconDataset(Dataset):
-#    def __init__(self, numbers, positions, latvecs, homo_lumos, eigenvalues):
-#        self.numbers = numbers
-#        self.positions = positions
-#        self.latvecs = latvecs
-#        self.homo_lumos = homo_lumos
-#        self.eigenvalues = eigenvalues
-#
-#    def __len__(self):
-#        return len(self.numbers)
-#
-#    def __getitem__(self, index):
-#        number = self.numbers[index] #atomic number
-#        position = self.positions[index]
-#        latvec = self.latvecs[index]
-#        homo_lumo = self.homo_lumos[index]
-#        eigenvalue = self.eigenvalues[index]
-#        system = {"number": number, 
-#                  "position": position, 
-#                  "latvec": latvec, 
-#                  "homo_lumo": homo_lumo, 
-#                  "eigenvalue": eigenvalue, 
-#                  "index": index
-#                  }
-#        return system
-#
-#def create_dataset(path):
-#    with h5py.File(path, 'r') as f:
-#        key = list(f.keys())[0]
-#        systems_idxs = len(f[key].keys())/6
-#
-#        regex_pattern = r'(Si|C)'
-#        data = {'number': [[14 if atom == "Si" else 6 for atom in re.findall(regex_pattern,key)]],
-#                'position': torch.from_numpy(f[key]['1' + 'position'][:]).unsqueeze(dim=0),
-#                'lattice vector': torch.from_numpy(f[key]['1' + 'lattice vector'][:]).unsqueeze(dim=0),
-#                'homo_lumo': torch.from_numpy(f[key]['1' + 'homo_lumo'][:]).unsqueeze(dim=0),
-#                'eigenvalue': torch.from_numpy(f[key]['1' + 'eigenvalue'][:]).unsqueeze(dim=0),
-#                }
-#        for idx in range(2, int(systems_idxs) + 1):#index:
-#            data['number'].append(data['number'][0])
-#            for group in ['position', 'lattice vector', 'homo_lumo', 'eigenvalue']:
-#                data[group] = torch.cat((data[group], torch.from_numpy(f[key][str(idx) + group][:]).unsqueeze(dim=0)), dim=0)
-#
-#        return SiliconDataset(torch.IntTensor(data['number']),
-#                              data['position'], 
-#                              data['lattice vector'], 
-#                              data['homo_lumo'],
-#                              data['eigenvalue']
-#                              )
-#
+
 #dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
 #dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
 dataset_Si63v_hse_101 =  SiliconDataset.create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
@@ -147,26 +99,7 @@ targets = {'eigenvalues': ref_ev,
            }
 
 # Create Plot of training DOS reference
-energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
-dos_ref_plot = dos((targets['eigenvalues']), energies_plot, 0.09)
-dos_ref_plot_mean = dos_ref_plot.mean(dim=0)
-dos_ref_plot_std = dos_ref_plot.std(dim=0)
-fermi_train_plot = targets['homo_lumos'].mean(dim=-1)
-energies_train_plot = fermi_train_plot.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(training_size, 0)
-
-plt.plot((energies_plot - fermi_train_plot.unsqueeze(-1))[0], dos_ref_plot_mean, '-', linewidth=1.0)
-plt.fill_between((energies_plot - fermi_train_plot.unsqueeze(-1))[0], dos_ref_plot_mean + dos_ref_plot_std, dos_ref_plot_mean - dos_ref_plot_std, alpha=0.5, facecolor='darkred')
-#plt.fill_between(energies_plot[0], dos_ref_plot_mean + dos_ref_plot_std, dos_ref_plot_mean - dos_ref_plot_std, alpha=0.5, facecolor='darkred')
-#plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
-plt.fill_between(points, -3, 80, alpha=0.2)
-
-plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on', zorder=10)
-plt.xlim((-4, 7))
-plt.ylim((-1, 70))
-plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=14)
-plt.ylabel("DOS", fontsize=14)
-print(points)
-plt.show()
+plot_training_ref(targets, training_size, points)
 
 # Define Training
 #-----------------------------------------------------------
@@ -236,7 +169,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         optimizer.step()
         print(f"Loss: {loss.item()}")
 
-number_of_epochs = 10
+number_of_epochs = 1
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
@@ -245,19 +178,9 @@ for epoch in range(number_of_epochs):
 #Plotting of result
 #---------------------------------------------------
 
-#Reference
-ref_hl_plot = targets['homo_lumos']
-ref_ev_plot = targets['eigenvalues']
-ref_fermi_plot = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
-ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
-print('REF_ENERGIES_PLOT SIZE')
-print(ref_energies_plot.size())
-print(ref_fermi_plot.size())
-ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, 0.09)
-ref_dos_mean_plot = ref_dos_plot.mean(dim=0)
-ref_dos_std_plot = ref_dos_plot.std(dim=0)
+##Reference
 
-#Original DFTB calc
+##Original DFTB calc
 h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
 s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
 
@@ -278,78 +201,12 @@ mix_params = {'mix_param': 0.2,
 kwargs = {}
 kwargs['mix_params'] = mix_params
 dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
-dftb_calculator_o(geometry_o, orbs_o)
 
-hl_dftb = getattr(dftb_calculator_o, 'homo_lumo').detach() / energy_units['ev']
-fermi_dftb = hl_dftb.mean(-1).unsqueeze(-1)
-eigval_dftb = dftb_calculator_o.eig_values.detach() / energy_units['ev']
-dos_dftb = dos((eigval_dftb), energies_plot, 0.09)
-dos_dftb_mean = dos_dftb.mean(dim=0)
-dos_dftb_std = dos_dftb.std(dim=0)
-
-# Results before training
-#plt.plot((ref_energies_plot - ref_fermi_plot).squeeze(0), ref_dos_plot.squeeze(0), label='DFT')
-plt.plot((ref_energies_plot - ref_fermi_plot)[0], ref_dos_mean_plot, '-', label='DFT')
-plt.fill_between((ref_energies_plot - ref_fermi_plot)[0],
-                 ref_dos_mean_plot + ref_dos_std_plot,
-                 ref_dos_mean_plot - ref_dos_std_plot,
-                 alpha=0.5)
-#plt.plot((ref_energies_plot - fermi_dftb).squeeze(0), dos_dftb.squeeze(0), label='siband-1-1')
-plt.plot((ref_energies_plot - fermi_dftb)[0], dos_dftb_mean, '-', label='siband-1-1')
-plt.fill_between((ref_energies_plot - fermi_dftb)[0],
-                 dos_dftb_mean + dos_dftb_std,
-                 dos_dftb_mean - dos_dftb_std,
-                 alpha=0.5)
-#plt.fill_between(energies_train_plot[0], -3, 80, alpha=0.2)
-
-plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on')
-
-#plt.xlim((-18.2, 5.2))
-plt.xlim((points[0], points[-1]))
-#plt.ylim((-1, 70))
-
-plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
-plt.ylabel('DOS [states / eV]', fontsize=15)
-plt.title("Before training", fontsize=13)
-plt.legend(fontsize=13)
-plt.show()
+plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
 
 # Prediction after training
 
-#Run calculation again to calculate all training systems and not just the last batch from the training loop
-dftb_calculator(geometry_o, orbs_o)
-
-hl_pred = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
-fermi_pred = hl_pred.mean(-1).unsqueeze(-1)
-eigval_pred = dftb_calculator.eig_values.detach() / energy_units['ev']
-dos_pred = dos((eigval_pred), ref_energies_plot, 0.09)
-dos_pred_mean = dos_pred.mean(dim=0)
-dos_pred_std = dos_pred.std(dim=0)
-#plt.plot((ref_energies_plot - ref_fermi_plot).squeeze(0), ref_dos_plot.squeeze(0), label='DFT')
-plt.plot((ref_energies_plot - ref_fermi_plot)[0], ref_dos_mean_plot, '-', label='DFT')
-plt.fill_between((ref_energies_plot - ref_fermi_plot)[0],
-                 ref_dos_mean_plot + ref_dos_std_plot,
-                 ref_dos_mean_plot - ref_dos_std_plot,
-                 alpha=0.5)
-
-#plt.plot((ref_energies_plot - fermi_pred).squeeze(0), dos_pred.squeeze(0), label='spline')
-plt.plot((ref_energies_plot - fermi_pred)[0], dos_pred_mean, '-', label='spline')
-plt.fill_between((ref_energies_plot - fermi_pred)[0],
-                 dos_pred_mean + dos_pred_std,
-                 dos_pred_mean - dos_pred_std,
-                 alpha=0.5)
-
-#plt.xlim(-3.5, 2)
-plt.xlim((points[0], points[-1]))
-#plt.ylim(-2, 40)
-plt.tick_params(direction='in', labelsize='13', width=1.1, top='on',
-                right='on')
-plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
-plt.ylabel('DOS [states / eV]', fontsize=15)
-plt.title("After training", fontsize=13)
-plt.legend(fontsize=13)
-plt.show()
-
+plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
 
 
 
