@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from tbmalt.physics.dftb.properties import dos
 from tbmalt.data.units import energy_units, length_units
 
+from training_vars import training_globals, dataset_vars
+
 def plot_dos(targets,
              training_size,
              geometry,
@@ -21,7 +23,7 @@ def plot_dos(targets,
     ref_ev_plot = targets['eigenvalues']
     ref_fermi_plot = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
     ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
-    ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, 0.09)
+    ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, training_globals['dos_sigma'])
     ref_dos_mean_plot = ref_dos_plot.mean(dim=0)
     ref_dos_std_plot = ref_dos_plot.std(dim=0)
 
@@ -32,7 +34,7 @@ def plot_dos(targets,
     hl_dftb = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
     fermi_dftb = hl_dftb.mean(-1).unsqueeze(-1)
     eigval_dftb = dftb_calculator.eig_values.detach() / energy_units['ev']
-    dos_dftb = dos((eigval_dftb), energies_plot, 0.09)
+    dos_dftb = dos((eigval_dftb), energies_plot, training_globals['dos_sigma'])
     dos_dftb_mean = dos_dftb.mean(dim=0)
     dos_dftb_std = dos_dftb.std(dim=0)
 
@@ -63,7 +65,7 @@ def plot_training_ref(targets, training_size, points):
     ref_ev_plot = targets['eigenvalues']
     ref_fermi_plot = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
     ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
-    ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, 0.09)
+    ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, training_globals['dos_sigma'])
     ref_dos_mean_plot = ref_dos_plot.mean(dim=0)
     ref_dos_std_plot = ref_dos_plot.std(dim=0)
     

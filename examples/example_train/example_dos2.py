@@ -17,8 +17,7 @@ from tbmalt.data.units import energy_units, length_units
 
 from tbmalt.physics.dftb.properties import dos
 
-#from tbmalt.io.loadhdf import LoadHdf
-
+from training_vars import training_globals, dataset_vars
 from silicon_dataset import SiliconDataset
 from plot_dos import plot_dos, plot_training_ref
 
@@ -27,7 +26,11 @@ torch.set_default_dtype(torch.float64)
 
 # Define Calculation for homonuclear silicon
 #---------------------------------------------------
-parameter_db_path = './data _tbmaltpaper/siband.hdf5'
+dataset_name = 'si63v_hse_101'
+#dataset_vars = dataset_vars[dataset_name]
+
+#parameter_db_path = './data _tbmaltpaper/siband.hdf5'
+parameter_db_path = dataset_vars[dataset_name]['parameter_db_path']
 
 shell_dict = {14: [0, 1, 2]}
 #shell_dict = {14: [0, 1, 2], 6: [0, 1, 3]}
@@ -55,43 +58,24 @@ dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True,
 
 # Prepare Data
 #---------------------------------------------------
-
-#dataset_Si63v_relax_pbe = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_relax_pbe.hdf')
-#dataset_Si63v_hse_101 = create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
-dataset_Si63v_hse_101 =  SiliconDataset.create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
-#dataset_Si32c31_hse_82 = create_dataset('./data_wenbo/dataset/fhi-aims_si32c31_hse_82.hdf')
-#dataset_Si65_interstitial_hse = create_dataset('./data_wenbo/dataset/fhi-aims_si65_interstitial_hse.hdf')
-
-dataset = dataset_Si63v_hse_101
+#dataset = SiliconDataset.create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
+dataset = SiliconDataset.create_dataset(dataset_vars[dataset_name]['dataset_path'])
 
 # Energy window for dos sampling
-#points = torch.linspace(-4.6, 6.9, 1151)
-points = torch.linspace(-3.0, 2.0, 501)
+#points = torch.linspace(-3.0, 2.0, 501)
+points = dataset_vars[dataset_name]['points']
 
 #prepare training data
-training_size = 2
+training_size = dataset_vars[dataset_name]['training_split'][0]
 indice = torch.arange(training_size).tolist()
 
-data_subset_train = random_split(dataset, [2, 99])[0]
-#data_subset_train = random_split(dataset_Si63v_relax_pbe, [1, 0])[0]
-#data_subset_train = random_split(dataset_Si65_interstitial_hse, [0.5, 0.5])[0]
+data_subset_train = random_split(dataset, dataset_vars[dataset_name]['training_split'])[0]
 train_indeces = data_subset_train.indices
 data_train = dataset[train_indeces]
-#data_train = dataset_Si63v_relax_pbe[train_indeces]
-#data_train = dataset_Si65_interstitial_hse[train_indeces]
-print('DATATRAIN')
-print(data_train['number'])
-n_batch = 1
-dataloader_train = DataLoader(data_subset_train, batch_size=n_batch)
-print('DATALOADER')
-#for batch, x in enumerate(dataloader_train):
-#    print(x)
-print('@@@@@@@@@@2')
-#print(data_train.numbers)
-print(data_train['number'])
 
-#ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
-#ref_ev, ref_hl = (data_train.eigenvalues, data_train.homo_lumos)
+n_batch = dataset_vars[dataset_name]['n_batch']
+dataloader_train = DataLoader(data_subset_train, batch_size=n_batch)
+
 ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
 #reference data
 targets = {'eigenvalues': ref_ev,
@@ -112,7 +96,7 @@ def prediction_data_delegate(calculator, targets, **kwargs):
     predictions = dict()
     fermi_dftb = calculator.homo_lumo.mean(dim=-1) / energy_units['ev']
     energies_dftb = fermi_dftb.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
-    dos_dftb = dos(calculator.eig_values / energy_units['ev'], energies_dftb, 0.09)
+    dos_dftb = dos(calculator.eig_values / energy_units['ev'], energies_dftb, training_globals['dos_sigma'])
 
     predictions['dos'] = dos_dftb
     return predictions
@@ -122,7 +106,7 @@ def reference_data_delegate(calculator, targets, **kwargs):
     ref_ev = targets['eigenvalues']
     fermi_train = targets['homo_lumos'].mean(dim=-1)
     energies_train = fermi_train.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
-    dos_ref = dos((ref_ev), energies_train, 0.09)
+    dos_ref = dos((ref_ev), energies_train, training_globals['dos_sigma'])
 
     reference['dos'] = dos_ref
     return reference
@@ -140,7 +124,7 @@ s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
 params = h_var + s_var
 
 # optimizer
-learning_rate = 0.00005
+learning_rate = training_globals['learning_rate']
 optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
 # Training
@@ -169,7 +153,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         optimizer.step()
         print(f"Loss: {loss.item()}")
 
-number_of_epochs = 1
+number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
