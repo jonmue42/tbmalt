@@ -19,7 +19,7 @@ from tbmalt.physics.dftb.properties import dos
 
 from training_vars import training_globals, dataset_vars
 from silicon_dataset import SiliconDataset
-from plot_dos import plot_dos, plot_training_ref
+from plot_dos import plot_dos, plot_training_ref, plot_dos_test
 
 
 torch.set_default_dtype(torch.float64)
@@ -66,15 +66,17 @@ dataset = SiliconDataset.create_dataset(dataset_vars[dataset_name]['dataset_path
 points = dataset_vars[dataset_name]['points']
 
 #prepare training data
-training_size = dataset_vars[dataset_name]['training_split'][0]
+training_size, test_size = dataset_vars[dataset_name]['training_split'][0], dataset_vars[dataset_name]['training_split'][1]
 indice = torch.arange(training_size).tolist()
 
-data_subset_train = random_split(dataset, dataset_vars[dataset_name]['training_split'])[0]
+data_subset_train, data_subset_test, _ = random_split(dataset, dataset_vars[dataset_name]['training_split'])
 train_indeces = data_subset_train.indices
 data_train = dataset[train_indeces]
 
-n_batch = dataset_vars[dataset_name]['n_batch']
-dataloader_train = DataLoader(data_subset_train, batch_size=n_batch)
+batch_size_train = dataset_vars[dataset_name]['batch_size_train']
+batch_size_test = dataset_vars[dataset_name]['batch_size_test']
+dataloader_train = DataLoader(data_subset_train, batch_size=batch_size_train)
+dataloader_test = DataLoader(data_subset_test, batch_size=batch_size_test)
 
 ref_ev, ref_hl = (data_train['eigenvalue'], data_train['homo_lumo'])
 #reference data
@@ -92,20 +94,20 @@ plot_training_ref(targets, training_size, points)
 loss_func = hellinger_loss
 
 #delegates
-def prediction_data_delegate(calculator, targets, **kwargs):
+def prediction_data_delegate(calculator, targets, batch_size, **kwargs):
     predictions = dict()
     fermi_dftb = calculator.homo_lumo.mean(dim=-1) / energy_units['ev']
-    energies_dftb = fermi_dftb.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
+    energies_dftb = fermi_dftb.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(batch_size, 0)
     dos_dftb = dos(calculator.eig_values / energy_units['ev'], energies_dftb, training_globals['dos_sigma'])
 
     predictions['dos'] = dos_dftb
     return predictions
 
-def reference_data_delegate(calculator, targets, **kwargs):
+def reference_data_delegate(calculator, targets, batch_size, **kwargs):
     reference = dict()
     ref_ev = targets['eigenvalues']
     fermi_train = targets['homo_lumos'].mean(dim=-1)
-    energies_train = fermi_train.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(n_batch, 0)
+    energies_train = fermi_train.unsqueeze(-1) + points.unsqueeze(0).repeat_interleave(batch_size, 0)
     dos_ref = dos((ref_ev), energies_train, training_globals['dos_sigma'])
 
     reference['dos'] = dos_ref
@@ -129,6 +131,7 @@ optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
 # Training
 #--------------------------------------------------
+loss_list = []
 def train_loop(dataloader, optimizer, dftb_calculator):
     _loss = 0
     for batch, data in enumerate(dataloader):
@@ -147,7 +150,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
 
         dftb_calculator(geometry, orbs, grad_mode='direct')
 
-        loss, _ = loss_entity(dftb_calculator, targets)
+        loss, _ = loss_entity(dftb_calculator, targets, batch_size=batch_size_train)
         _loss = _loss + loss
         #loss.retain_grad()
         #loss.backward(retain_graph=True)
@@ -157,13 +160,38 @@ def train_loop(dataloader, optimizer, dftb_calculator):
     _loss.retain_grad()
     _loss.backward(retain_graph=True)
     optimizer.step()
-    print(f"Loss: {_loss.item()}")
+    print(f"Training Loss: {_loss.item()}")
+    loss_list.append(_loss.detach())
 
+def test_loop(dataloader, dftb_calculator):
+    _loss = 0
+    for batch, data in enumerate(dataloader):
+        targets = {'eigenvalues': data['eigenvalue'],
+                   'homo_lumos': data['homo_lumo']
+                   }
+
+        geometry_test = Geometry(data['number'], 
+                                 data['position'],
+                                 lattice_vector=data['latvec'],
+                                 units='a',
+                                 cutoff=torch.tensor([18.0])/length_units['angstrom']
+                                 )
+        orbs_test = OrbitalInfo(geometry_test.atomic_numbers, shell_dict, shell_resolved=False)
+
+        dftb_calculator(geometry_test, orbs_test, grad_mode='direct')
+        
+        loss, _ = loss_entity(dftb_calculator, targets, batch_size=batch_size_test)
+        _loss = _loss + loss
+
+    print(f"Test Lost: {_loss.item()}")
+    
 number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-
+#    with torch.no_grad():
+#        test_loop(dataloader_test, dftb_calculator)
+#
 
 #Plotting of result
 #---------------------------------------------------
@@ -197,6 +225,9 @@ plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, 
 # Prediction after training
 
 plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
+
+# Plot test set
+plot_dos_test(dataloader_test, dftb_calculator, test_size, batch_size_test, shell_dict)
 
 
 

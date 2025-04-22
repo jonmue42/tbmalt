@@ -5,8 +5,71 @@ import matplotlib.pyplot as plt
 
 from tbmalt.physics.dftb.properties import dos
 from tbmalt.data.units import energy_units, length_units
+from tbmalt import Geometry, OrbitalInfo
 
 from training_vars import training_globals, dataset_vars
+
+def plot_dos_test(dataloader,
+                  dftb_calculator,
+                  training_size,
+                  batch_size,
+                  shell_dict
+                  ):
+
+    energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
+    energies_batch = torch.linspace(-18, 5, 500).repeat(batch_size, 1)
+
+    hl_ref_tot = []
+    dos_ref_tot = []
+
+    fermi_dftb_tot = torch.empty((0, 1))
+    print('fermi_dftb_tot')
+    print(fermi_dftb_tot)
+    dos_dftb_tot = torch.empty((0, 500))
+    for batch, data in enumerate(dataloader):
+        
+        geometry_batch = Geometry(data['number'], 
+                                 data['position'],
+                                 lattice_vector=data['latvec'],
+                                 units='a',
+                                 cutoff=torch.tensor([18.0])/length_units['angstrom']
+                                 )
+        orbs_batch = OrbitalInfo(geometry_batch.atomic_numbers, shell_dict, shell_resolved=False)
+
+        dftb_calculator(geometry_batch, orbs_batch, grad_mode='direct')
+
+        hl_dftb = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
+        fermi_dftb = hl_dftb.mean(-1).unsqueeze(-1)
+        fermi_dftb_tot = torch.cat((fermi_dftb_tot, fermi_dftb), dim=0)
+        eigval_dftb = dftb_calculator.eig_values.detach() / energy_units['ev']
+        dos_dftb = dos((eigval_dftb), energies_batch, training_globals['dos_sigma'])
+        dos_dftb_tot = torch.cat((dos_dftb_tot, dos_dftb), dim=0)
+    print('sizes')
+    print(dos_dftb_tot.size())
+    print(fermi_dftb_tot.size())
+    # Plotting
+    plt.plot((ref_energies_plot - ref_fermi_plot)[0], ref_dos_mean_plot, '-', label=labels[0])
+    plt.fill_between((ref_energies_plot - ref_fermi_plot)[0],
+                     ref_dos_mean_plot + ref_dos_std_plot,
+                     ref_dos_mean_plot - ref_dos_std_plot,
+                     alpha=0.5)
+    plt.plot((ref_energies_plot - fermi_dftb)[0], dos_dftb_mean, '-', label=labels[1])
+    plt.fill_between((ref_energies_plot - fermi_dftb)[0],
+                     dos_dftb_mean + dos_dftb_std,
+                     dos_dftb_mean - dos_dftb_std,
+                     alpha=0.5)
+    
+    plt.tick_params(direction='in', labelsize='13', width=1.1, top='on', right='on')
+    plt.xlim((points[0], points[-1]))
+    
+    plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=15)
+    plt.ylabel('DOS [states / eV]', fontsize=15)
+    plt.title(title, fontsize=13)
+    plt.legend(fontsize=13)
+    plt.show()
+
+
+ 
 
 def plot_dos(targets,
              training_size,
