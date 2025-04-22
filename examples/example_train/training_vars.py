@@ -2,7 +2,7 @@ import torch
 
 training_globals = {
         'learning_rate': 0.00005,
-        'number_of_epochs': 50,
+        'number_of_epochs': 5,
         'dos_sigma': 0.09,
         }
 

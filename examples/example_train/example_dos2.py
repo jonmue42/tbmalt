@@ -130,8 +130,8 @@ optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 # Training
 #--------------------------------------------------
 def train_loop(dataloader, optimizer, dftb_calculator):
+    _loss = 0
     for batch, data in enumerate(dataloader):
-        loss = 0
         optimizer.zero_grad()
         targets = {'eigenvalues': data['eigenvalue'],
                    'homo_lumos': data['homo_lumo']
@@ -148,10 +148,16 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         dftb_calculator(geometry, orbs, grad_mode='direct')
 
         loss, _ = loss_entity(dftb_calculator, targets)
-        loss.retain_grad()
-        loss.backward(retain_graph=True)
-        optimizer.step()
-        print(f"Loss: {loss.item()}")
+        _loss = _loss + loss
+        #loss.retain_grad()
+        #loss.backward(retain_graph=True)
+        #optimizer.step()
+        #print(f"Loss: {loss.item()}")
+    optimizer.zero_grad()
+    _loss.retain_grad()
+    _loss.backward(retain_graph=True)
+    optimizer.step()
+    print(f"Loss: {_loss.item()}")
 
 number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
