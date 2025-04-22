@@ -10,9 +10,9 @@ from tbmalt import Geometry, OrbitalInfo
 from training_vars import training_globals, dataset_vars
 
 def plot_dos_test(dataloader,
-                  dftb_calculator,
                   training_size,
                   batch_size,
+                  dftb_calculator,
                   shell_dict,
                   points,
                   labels,

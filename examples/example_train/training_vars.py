@@ -7,9 +7,9 @@ training_globals = {
         }
 
 si63v_hse_101_vars = {
-        'batch_size_train': 2,
-        'batch_size_test': 2,
-        'training_split': [2, 4, 95],
+        'batch_size_train': 1,
+        'batch_size_test': 1,
+        'training_split': [5, 20, 76], #training, testing, throwaway
         'points': torch.linspace(-3.0, 2.0, 501),
         'dataset_path': './data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf',
         'parameter_db_path': './data _tbmaltpaper/siband.hdf5',

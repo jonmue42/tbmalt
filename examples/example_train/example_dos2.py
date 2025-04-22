@@ -58,11 +58,9 @@ dftb_calculator = Dftb2(h_feed, s_feed, o_feed, u_feed, suppress_scc_error=True,
 
 # Prepare Data
 #---------------------------------------------------
-#dataset = SiliconDataset.create_dataset('./data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf')
 dataset = SiliconDataset.create_dataset(dataset_vars[dataset_name]['dataset_path'])
 
 # Energy window for dos sampling
-#points = torch.linspace(-3.0, 2.0, 501)
 points = dataset_vars[dataset_name]['points']
 
 #prepare training data
@@ -163,6 +161,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
     print(f"Training Loss: {_loss.item()}")
     loss_list.append(_loss.detach())
 
+test_loss_list = []
 def test_loop(dataloader, dftb_calculator):
     _loss = 0
     for batch, data in enumerate(dataloader):
@@ -182,53 +181,55 @@ def test_loop(dataloader, dftb_calculator):
         
         loss, _ = loss_entity(dftb_calculator, targets, batch_size=batch_size_test)
         _loss = _loss + loss
-
     print(f"Test Lost: {_loss.item()}")
+    test_loss_list.append(_loss.detach())
     
 number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-#    with torch.no_grad():
-#        test_loop(dataloader_test, dftb_calculator)
-#
+    with torch.no_grad():
+        test_loop(dataloader_test, dftb_calculator)
+
 
 #Plotting of result
 #---------------------------------------------------
-
-##Reference
-
-##Original DFTB calc
-h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
-s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
-
-geometry_o = Geometry(data_train['number'],
-                      data_train['position'],
-                      lattice_vector=data_train['latvec'],
-                      units='a',
-                      cutoff=torch.tensor([18.0])/length_units['angstrom']
-                      )
-orbs_o = OrbitalInfo(geometry_o.atomic_numbers, shell_dict, shell_resolved=False)
-
-# Calculator
-mix_params = {'mix_param': 0.2, 
-              'init_mix_param': 0.2,
-              'generations': 3,
-              'tolerance': 1e-10
-              }
-kwargs = {}
-kwargs['mix_params'] = mix_params
-dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
-
-#plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
-
-# Prediction after training
-
-#plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
-
-# Plot test set
-plot_dos_test(dataloader_test, dftb_calculator, test_size, batch_size_test, shell_dict, points, labels=('DFT', 'spline'), title='After training')
-
+with torch.no_grad():
+    ##Reference
+    
+    ##Original DFTB calc
+    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
+    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
+    
+    geometry_o = Geometry(data_train['number'],
+                          data_train['position'],
+                          lattice_vector=data_train['latvec'],
+                          units='a',
+                          cutoff=torch.tensor([18.0])/length_units['angstrom']
+                          )
+    orbs_o = OrbitalInfo(geometry_o.atomic_numbers, shell_dict, shell_resolved=False)
+    
+    # Calculator
+    mix_params = {'mix_param': 0.2, 
+                  'init_mix_param': 0.2,
+                  'generations': 3,
+                  'tolerance': 1e-10
+                  }
+    kwargs = {}
+    kwargs['mix_params'] = mix_params
+    dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
+    
+    #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    
+    # Prediction after training
+    
+    #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
+    
+    # Plot test set
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+    
 
 
 
