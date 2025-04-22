@@ -220,14 +220,14 @@ kwargs = {}
 kwargs['mix_params'] = mix_params
 dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
 
-plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
+#plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
 
 # Prediction after training
 
-plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
+#plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
 
 # Plot test set
-plot_dos_test(dataloader_test, dftb_calculator, test_size, batch_size_test, shell_dict)
+plot_dos_test(dataloader_test, dftb_calculator, test_size, batch_size_test, shell_dict, points, labels=('DFT', 'spline'), title='After training')
 
 
 

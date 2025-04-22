@@ -13,20 +13,30 @@ def plot_dos_test(dataloader,
                   dftb_calculator,
                   training_size,
                   batch_size,
-                  shell_dict
+                  shell_dict,
+                  points,
+                  labels,
+                  title
                   ):
 
     energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
     energies_batch = torch.linspace(-18, 5, 500).repeat(batch_size, 1)
 
-    hl_ref_tot = []
-    dos_ref_tot = []
-
+    fermi_ref_tot= torch.empty((0, 1))
+    dos_ref_tot = torch.empty((0, 500))
+    
     fermi_dftb_tot = torch.empty((0, 1))
-    print('fermi_dftb_tot')
-    print(fermi_dftb_tot)
     dos_dftb_tot = torch.empty((0, 500))
     for batch, data in enumerate(dataloader):
+        targets = {'eigenvalues': data['eigenvalue'],
+                   'homo_lumos': data['homo_lumo']
+                }
+        ref_hl = targets['homo_lumos']
+        ref_ev = targets['eigenvalues']
+        ref_fermi = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
+        fermi_ref_tot = torch.cat((fermi_ref_tot, ref_fermi), dim=0)
+        ref_dos = dos((ref_ev), energies_batch, training_globals['dos_sigma'])
+        dos_ref_tot = torch.cat((dos_ref_tot, ref_dos), dim=0)
         
         geometry_batch = Geometry(data['number'], 
                                  data['position'],
@@ -44,17 +54,20 @@ def plot_dos_test(dataloader,
         eigval_dftb = dftb_calculator.eig_values.detach() / energy_units['ev']
         dos_dftb = dos((eigval_dftb), energies_batch, training_globals['dos_sigma'])
         dos_dftb_tot = torch.cat((dos_dftb_tot, dos_dftb), dim=0)
-    print('sizes')
-    print(dos_dftb_tot.size())
-    print(fermi_dftb_tot.size())
+
+    dos_ref_mean = dos_ref_tot.mean(dim=0)
+    dos_ref_std = dos_ref_tot.std(dim=0)
+
+    dos_dftb_mean = dos_dftb_tot.mean(dim=0)
+    dos_dftb_std = dos_dftb_tot.std(dim=0)
     # Plotting
-    plt.plot((ref_energies_plot - ref_fermi_plot)[0], ref_dos_mean_plot, '-', label=labels[0])
-    plt.fill_between((ref_energies_plot - ref_fermi_plot)[0],
-                     ref_dos_mean_plot + ref_dos_std_plot,
-                     ref_dos_mean_plot - ref_dos_std_plot,
+    plt.plot((energies_plot - fermi_ref_tot)[0], dos_ref_mean, '-', label=labels[0])
+    plt.fill_between((energies_plot - fermi_ref_tot)[0],
+                     dos_ref_mean + dos_ref_std,
+                     dos_ref_mean - dos_ref_std,
                      alpha=0.5)
-    plt.plot((ref_energies_plot - fermi_dftb)[0], dos_dftb_mean, '-', label=labels[1])
-    plt.fill_between((ref_energies_plot - fermi_dftb)[0],
+    plt.plot((energies_plot - fermi_dftb_tot)[0], dos_dftb_mean, '-', label=labels[1])
+    plt.fill_between((energies_plot - fermi_dftb_tot)[0],
                      dos_dftb_mean + dos_dftb_std,
                      dos_dftb_mean - dos_dftb_std,
                      alpha=0.5)
