@@ -151,10 +151,6 @@ def train_loop(dataloader, optimizer, dftb_calculator):
 
         loss, _ = loss_entity(dftb_calculator, targets, batch_size=batch_size_train)
         _loss = _loss + loss
-        #loss.retain_grad()
-        #loss.backward(retain_graph=True)
-        #optimizer.step()
-        #print(f"Loss: {loss.item()}")
     optimizer.zero_grad()
     _loss.retain_grad()
     _loss.backward(retain_graph=True)
