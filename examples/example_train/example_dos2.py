@@ -143,7 +143,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
                     data['position'],
                     lattice_vector= data['latvec'],
                     units='a',
-                    cutoff=torch.tensor([18.0])/length_units['angstrom']
+                    cutoff=dataset_vars[dataset_name]['cutoff']
                     )
         orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
 
@@ -174,7 +174,7 @@ def test_loop(dataloader, dftb_calculator):
                                  data['position'],
                                  lattice_vector=data['latvec'],
                                  units='a',
-                                 cutoff=torch.tensor([18.0])/length_units['angstrom']
+                                 cutoff=dataset_vars[dataset_name]['cutoff']
                                  )
         orbs_test = OrbitalInfo(geometry_test.atomic_numbers, shell_dict, shell_resolved=False)
 
@@ -206,7 +206,7 @@ with torch.no_grad():
                           data_train['position'],
                           lattice_vector=data_train['latvec'],
                           units='a',
-                          cutoff=torch.tensor([18.0])/length_units['angstrom']
+                          cutoff=dataset_vars[dataset_name]['cutoff']
                           )
     orbs_o = OrbitalInfo(geometry_o.atomic_numbers, shell_dict, shell_resolved=False)
     
