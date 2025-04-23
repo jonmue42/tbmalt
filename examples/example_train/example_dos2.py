@@ -26,16 +26,17 @@ torch.set_default_dtype(torch.float64)
 
 # Define Calculation for homonuclear silicon
 #---------------------------------------------------
-dataset_name = 'si63v_hse_101'
+#dataset_name = 'si63v_hse_101'
+dataset_name = 'si32c31_hse_82'
 #dataset_vars = dataset_vars[dataset_name]
 
 #parameter_db_path = './data _tbmaltpaper/siband.hdf5'
 parameter_db_path = dataset_vars[dataset_name]['parameter_db_path']
 
-shell_dict = {14: [0, 1, 2]}
-#shell_dict = {14: [0, 1, 2], 6: [0, 1, 3]}
-#species = [14, 6] # Si, C
-species = [14] # Si, C
+#shell_dict = {14: [0, 1, 2]}
+shell_dict = {14: [0, 1], 6: [0, 1]}
+species = [14, 6] # Si, C
+#species = [14] # Si, C
 
 # Feeds
 h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)

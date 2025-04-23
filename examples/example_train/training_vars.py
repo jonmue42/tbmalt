@@ -15,6 +15,18 @@ si63v_hse_101_vars = {
         'parameter_db_path': './data _tbmaltpaper/siband.hdf5',
         }
 
+si32c31_hse_82_vars = {
+        'batch_size_train': 1,
+        'batch_size_test': 1,
+        'training_split': [2, 2, 78], #training, testing, throwaway
+        'points': torch.linspace(-4.1, 0.2, 431),
+        'dataset_path': './data_wenbo/dataset/fhi-aims_si32c31_hse_82.hdf',
+        'parameter_db_path': './output.hdf5',
+        }
+
+
+
 dataset_vars = {
-        'si63v_hse_101': si63v_hse_101_vars
+        'si63v_hse_101': si63v_hse_101_vars,
+        'si32c31_hse_82': si32c31_hse_82_vars,
         }
