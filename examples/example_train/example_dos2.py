@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import re
 
 from tbmalt.physics.dftb.feeds import SkFeed, SkfOccupationFeed, HubbardFeed, RepulsiveSplineFeed
-from tbmalt.common.maths.interpolation import CubicSpline
+from tbmalt.common.maths.interpolation import CubicSpline, ExponentialInter, test_iter
 from tbmalt.physics.dftb import Dftb2
 import tbmalt.common.maths as tbmalt_math
 from tbmalt.ml.loss_function import Loss, hellinger_loss
@@ -26,22 +26,24 @@ torch.set_default_dtype(torch.float64)
 
 # Define Calculation for homonuclear silicon
 #---------------------------------------------------
-#dataset_name = 'si63v_hse_101'
-dataset_name = 'si32c31_hse_82'
+dataset_name = 'si63v_hse_101'
+#dataset_name = 'si32c31_hse_82'
 #dataset_vars = dataset_vars[dataset_name]
 
 #parameter_db_path = './data _tbmaltpaper/siband.hdf5'
 parameter_db_path = dataset_vars[dataset_name]['parameter_db_path']
 
-#shell_dict = {14: [0, 1, 2]}
-shell_dict = {14: [0, 1], 6: [0, 1]}
-species = [14, 6] # Si, C
-#species = [14] # Si, C
+shell_dict = {14: [0, 1, 2]}
+#shell_dict = {14: [0, 1], 6: [0, 1]}
+#species = [14, 6] # Si, C
+species = [14] # Si, C
 
 # Feeds
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -122,6 +124,26 @@ for key in h_feed._off_sites.keys():
 
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
 s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
+print('Svar')
+print(s_var)
+print(len(s_var))
+print(s_var[0].size())
+print(s_var[1].size())
+print(s_var[2].size())
+print(s_var[3].size())
+print(s_var[4].size())
+print(s_var[5].size())
+print('Hvar')
+print(h_var)
+print(len(h_var))
+print(h_var[0].size())
+print(h_var[1].size())
+print(h_var[2].size())
+print(h_var[3].size())
+print(h_var[4].size())
+print(h_var[5].size())
+print('Hfeed offsite')
+print(h_feed._off_sites)
 params = h_var + s_var
 
 # optimizer
@@ -182,12 +204,12 @@ def test_loop(dataloader, dftb_calculator):
     test_loss_list.append(_loss.detach())
     
 number_of_epochs = training_globals['number_of_epochs']
-for epoch in range(number_of_epochs):
-    print(f"Epoch {epoch+1}/{number_of_epochs}")
-    train_loop(dataloader_train, optimizer, dftb_calculator)
-    with torch.no_grad():
-        test_loop(dataloader_test, dftb_calculator)
-
+#for epoch in range(number_of_epochs):
+#    print(f"Epoch {epoch+1}/{number_of_epochs}")
+#    train_loop(dataloader_train, optimizer, dftb_calculator)
+#    with torch.no_grad():
+#        test_loop(dataloader_test, dftb_calculator)
+#
 
 #Plotting of result
 #---------------------------------------------------
@@ -195,8 +217,10 @@ with torch.no_grad():
     ##Reference
     
     ##Original DFTB calc
-    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
-    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
+    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)
+    #h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
+    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)
+    #s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
     
     geometry_o = Geometry(data_train['number'],
                           data_train['position'],
@@ -216,16 +240,16 @@ with torch.no_grad():
     kwargs['mix_params'] = mix_params
     dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
     
-    #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
     # Prediction after training
     
     #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
-    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
-    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     
 
 

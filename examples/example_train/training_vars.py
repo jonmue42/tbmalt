@@ -2,15 +2,16 @@ import torch
 from tbmalt.data.units import energy_units, length_units
 
 training_globals = {
-        'learning_rate': 0.00005,
-        'number_of_epochs': 20,
+        'learning_rate': 0.005,
+        #'learning_rate': 0.00005,
+        'number_of_epochs': 2,
         'dos_sigma': 0.09,
         }
 
 si63v_hse_101_vars = {
         'batch_size_train': 1,
         'batch_size_test': 1,
-        'training_split': [5, 20, 76], #training, testing, throwaway
+        'training_split': [1, 20, 101-21], #training, testing, throwaway
         'points': torch.linspace(-3.0, 2.0, 501),
         'cutoff': torch.tensor([18.0])/length_units['angstrom'],
         'dataset_path': './data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf',

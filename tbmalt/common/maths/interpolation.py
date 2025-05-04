@@ -7,6 +7,11 @@ import torch
 from torch.nn import Parameter
 from tbmalt.common.batch import pack, bT
 from tbmalt.ml import Feed
+
+from scipy.optimize import curve_fit as scipy_curve_fit
+import numpy as np 
+from matplotlib import pyplot as plt
+
 Tensor = torch.Tensor
 
 
@@ -650,7 +655,6 @@ class CubicSpline(Feed):
     @property
     def coefficients(self):
         """The spline coefficients."""
-
         # If the spline's y-knot values were modified by something or someone
         # external to the `CubicSpline` class, then the coefficients will no
         # longer accurately reflect the current state of the spline. Thus, the
@@ -708,6 +712,9 @@ class CubicSpline(Feed):
             ynew: Interpolation values with given points.
 
         """
+        #print("CubicSpline: forward")
+        #print('xnew shape: ', xnew.shape)
+        #print('xnew: ', xnew)
         # boundary condition of xnew
         assert xnew.ge(self.xp[0]).all(), \
             f'input should not be less than {self.xp[0]}'
@@ -723,6 +730,12 @@ class CubicSpline(Feed):
         interpolate = torch.logical_and(self.xp[0] <= xnew, xnew <= self.xp[-1])
         extrapolate = torch.logical_and(self.xp[-1] < xnew, xnew <= r_max)
         ypt = bT(self.y)
+        #print("ypt shape: ", ypt.shape)
+        #print('ypt dim: ', ypt.dim())
+        #print("ypt: ", ypt)
+
+        #print(self.xp.clone().numpy(force=True))
+        #print(ypt.clone().numpy(force=True))
 
         result = (
             torch.zeros(xnew.shape, device=self._device)
@@ -730,6 +743,8 @@ class CubicSpline(Feed):
             else torch.zeros(xnew.shape[0], ypt.shape[0],
                              device=self._device)
         )
+        #print("result shape: ", result.shape)
+        #print(result)
 
         # interpolation of xx which not in the tail
         if interpolate.any():
@@ -739,6 +754,10 @@ class CubicSpline(Feed):
             ind = ind[interpolate] - 1
             dx = xnew[interpolate] - self.xp[ind]
             aa, bb, cc, dd = self.coefficients[..., ind]
+            #print('aa: ', aa)
+            #print('aa size: ', aa.shape)
+            #print('bb: ', bb)
+            #print('bb size: ', bb.shape)
             interp = aa + bb * dx + cc * dx**2 + dd * dx**3
             interp = interp.transpose(0, -1) if interp.ndim > 1 else interp
             result[interpolate] = interp
@@ -761,6 +780,8 @@ class CubicSpline(Feed):
             result[extrapolate] = poly_to_zero(
                 dr, dx, 1.0 / dx, y2, y1p, y1pp)
 
+        print('Result CubicSpline: ', result)
+
         return result
 
     def __call__(self, *args, **kwargs) -> Tensor:
@@ -779,3 +800,339 @@ class CubicSpline(Feed):
         ver_delta = self._y_version != self._y._version
         id_delta = self._y_id != id(self._y)
         return ver_delta or id_delta
+
+
+
+
+
+
+
+
+class test_iter(Feed):
+    """Cupic spline interpolator.
+
+    An entity for piecewise interpolation of data via a cupic polynomial
+    spline which is twice continuously differentiable.
+
+    Arguments:
+        x: A one dimensional tensor specifying the interpolation grid points,
+            i.e. the knot locations.
+        y: Interpolation values, i.e. the knot values, associated with each
+            grid point. For single series interpolation this should be an array
+            of length "n", where "n" is the number of grid points present in
+            ``x``. For batch interpolation this should be an "m" by "n"
+            tensor. Note that this must be a `Parameter` rather than `Tensor`
+            instance.
+        tail: Distance over which to smooth the tail.
+
+    Keyword Args:
+        coefficients: 0th, 1st, 2nd and 3rd order parameters in cubic spline.
+
+    References:
+        .. [csi_wiki] https://en.wikipedia.org/wiki/Spline_(mathematics)
+
+    Examples:
+        >>> from tbmalt.common.maths.interpolation import CubicSpline
+        >>> import torch
+        >>> from torch.nn import Parameter
+        >>> x = torch.linspace(1, 10, 10)
+        >>> y = Parameter(torch.sin(x), requires_grad=False)
+        >>> spline = CubicSpline(x, y)
+        >>> spline.forward(torch.tensor([3.5]))
+        #   tensor([-0.3526])
+        >>> torch.sin(torch.tensor([3.5]))
+        #   tensor([-0.3508])
+
+    """
+
+    def __init__(self, x: Tensor, y: Parameter, tail: Real = 1.0,
+                 **kwargs):
+        super().__init__()
+
+        # X-knot values must be of an anticipated type
+        if not isinstance(x, Tensor) or isinstance(x, Parameter):
+            raise TypeError("The x-knot values must be a `torch.Tensor`"
+                            " instance.")
+
+        # Same for the y-knot values
+        if not isinstance(y, Parameter):
+            raise TypeError(
+                "The y-knot values must be a `torch.nn.Parameter` instance.")
+
+        assert y.dim() <= 2, '"CubicSpline" only support 1D or 2D interpolation'
+
+        # Ensure that there is not a mismatch between the number of x and y
+        # points supplied: one-dimensional case only.
+        if y.ndim == 1 and not (len(y) == len(x)):
+            raise ValueError(
+                "Mismatch detected in the number of supplied `x` "
+                f"({len(x)}) and `y` ({len(y)}) values."
+            )
+
+        # This is just a repeat of the above check but for the two-dimensional
+        # case.
+        elif y.ndim == 2 and y.shape[0] != len(x):
+            raise ValueError(
+                f"Array shape mismatch detected, anticipated a `y` array of "
+                f"the shape ({len(x)}, n), encountered {tuple(y.shape)} instead."
+            )
+
+        # Prevent users from unintentionally optimizing the knot locations.
+        if isinstance(x, Parameter) or x.requires_grad:
+            raise warnings.warn(
+                "Setting the knot positions 'x' as a freely tunable parameter"
+                " is strongly advised against as it may lead to instability or"
+                " incorrect behavior of the spline during optimisation."
+                " Please ensure that the `x` argument is a `torch.tensor`"
+                " type rather than a `torch.nn.Parameter` and that its"
+                "\"requires_grad\" attribute set to `False`.",
+                UserWarning, stacklevel=2)
+
+        self.xp = x
+        self._y = y
+
+        # Coefficients will be build when the `coefficients` property is
+        # first invoked. Unless the user has supplied the spline coefficients
+        # manually.
+        self._coefficients: Optional[Tensor] = None
+        if "coefficients" in kwargs.keys():
+            warnings.warn(
+                "Manual specification of coefficients is deprecated.",
+                DeprecationWarning, stacklevel=2)
+            self._coefficients: Optional[Tensor] = kwargs.get("coefficients")
+
+        self.grid_step = x[1] - x[0]
+        self.tail = tail
+
+        # Device type of the tensor in this class
+        self._device = x.device
+
+        # Store the version tracking information for the y-knot values so that
+        # the coefficients can be updated as and when needed.
+        self._y_version, self._y_id = None, None
+
+    @property
+    def y(self) -> Parameter:
+        """Value of the spline at each grid point."""
+        return self._y
+
+    @y.setter
+    def y(self, value: Parameter):
+        # Y-knot values must be of an anticipated type
+        if not isinstance(value, Parameter):
+            raise TypeError(
+                "y-knot values must be a `torch.nn.Parameter` instance.")
+
+        # Finally, set new y-knot value tensor.
+        self._y = value
+
+    @property
+    def coefficients(self):
+        """The spline coefficients."""
+        if self._coefficients is None:
+            ypt = bT(self._y)
+            #print('ypt: ', ypt)
+            #print('ypt shape: ', ypt.shape)
+
+            coefficients = torch.empty((0, 3), device=self.xp.device)
+            
+            for y_el in ypt:
+                x = self.xp.clone().numpy(force=True)
+                y = y_el.clone().numpy(force=True)
+                #print('x: ', x)
+                #print('y: ', y)
+                #print('x shape: ', x.shape)
+                #print('y shape: ', y.shape)
+                #coeffs, *pcov = scipy_curve_fit(self.fit_func_np, x, y,maxfev=1000000, p0=[y[0], 1, -1],ftol=1e-14, xtol=1e-14, gtol=1e-14)
+                #print('coeffs: ', coeffs)
+               # plt.plot(x, y, 'k-')
+               # plt.plot(x, self.fit_func_np(x, *coeffs), 'r-')
+               # plt.show()
+                #coefficients = torch.vstack((coefficients, torch.from_numpy(coeffs).clone()))
+                coefficients = torch.vstack((coefficients, torch.tensor([1.0, 1.0, -1.0])))
+                #print('coefficients: ', coefficients)
+                #print('coefficients shape: ', coefficients.shape)
+                #print('coeff 0:', coefficients[:, [0]])
+            self._coefficients = coefficients
+
+        return self._coefficients
+
+    @staticmethod
+    def fit_func_np(x, aa, bb, cc, dd, ee):
+        return aa*np.exp(bb * x + cc * x**2 + dd * x**3 + ee * x**4)
+
+    @staticmethod
+    def fit_func(x, aa, bb, cc):#, dd, ee):
+        return aa*torch.exp(bb * x + cc * x**2)# + dd * x**3 + ee * x**4)
+
+    def forward(self, xnew: Tensor) -> Tensor:
+        aa = self.coefficients[:, [0]]
+        bb = self.coefficients[:, [1]]
+        cc = self.coefficients[:, [2]]
+        #dd = self.coefficients[:, [3]]
+        #ee = self.coefficients[:, [4]]
+        #print('aa: ', aa)
+        #print('bb: ', bb)
+        #print('cc: ', cc)
+        #print('xnew: ', xnew)
+
+        result = self.fit_func(xnew, aa, bb, cc)#, dd, ee)
+        #print('result', bT(result))
+
+        return bT(result)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class ExponentialInter(Feed):
+    def __init__(self, x: Tensor, y: Parameter, tail: Real = 1.0,
+                 **kwargs):
+        super().__init__()
+
+        # X-knot values must be of an anticipated type
+        if not isinstance(x, Tensor) or isinstance(x, Parameter):
+            raise TypeError("The x-knot values must be a `torch.Tensor`"
+                            " instance.")
+
+        # Same for the y-knot values
+        if not isinstance(y, Parameter):
+            raise TypeError(
+                "The y-knot values must be a `torch.nn.Parameter` instance.")
+
+        assert y.dim() <= 2, '"CubicSpline" only support 1D or 2D interpolation'
+
+        # Ensure that there is not a mismatch between the number of x and y
+        # points supplied: one-dimensional case only.
+        if y.ndim == 1 and not (len(y) == len(x)):
+            raise ValueError(
+                "Mismatch detected in the number of supplied `x` "
+                f"({len(x)}) and `y` ({len(y)}) values."
+            )
+
+        # This is just a repeat of the above check but for the two-dimensional
+        # case.
+        elif y.ndim == 2 and y.shape[0] != len(x):
+            raise ValueError(
+                f"Array shape mismatch detected, anticipated a `y` array of "
+                f"the shape ({len(x)}, n), encountered {tuple(y.shape)} instead."
+            )
+
+        # Prevent users from unintentionally optimizing the knot locations.
+        if isinstance(x, Parameter) or x.requires_grad:
+            raise warnings.warn(
+                "Setting the knot positions 'x' as a freely tunable parameter"
+                " is strongly advised against as it may lead to instability or"
+                " incorrect behavior of the spline during optimisation."
+                " Please ensure that the `x` argument is a `torch.tensor`"
+                " type rather than a `torch.nn.Parameter` and that its"
+                "\"requires_grad\" attribute set to `False`.",
+                UserWarning, stacklevel=2)
+
+        self.xp = x
+        self._y = y
+
+        # Coefficients will be build when the `coefficients` property is
+        # first invoked. Unless the user has supplied the spline coefficients
+        # manually.
+        self._coefficients: Optional[Tensor] = None
+        if "coefficients" in kwargs.keys():
+            print('test')
+            warnings.warn(
+                "Manual specification of coefficients is deprecated.",
+                DeprecationWarning, stacklevel=2)
+            self._coefficients: Optional[Tensor] = kwargs.get("coefficients")
+
+        self.grid_step = x[1] - x[0]
+        self.tail = tail
+
+        # Device type of the tensor in this class
+        self._device = x.device
+
+        # Store the version tracking information for the y-knot values so that
+        # the coefficients can be updated as and when needed.
+        self._y_version, self._y_id = None, None
+
+    @property
+    def y(self) -> Parameter:
+        return self._y
+
+    @y.setter
+    def y(self, value: Parameter):
+        # Y-knot values must be of an anticipated type
+        if not isinstance(value, Parameter):
+            raise TypeError(
+                "y-knot values must be a `torch.nn.Parameter` instance.")
+
+        # Finally, set new y-knot value tensor.
+        self._y = value
+
+    @property
+    def coefficients(self):
+        if self._coefficients is None:
+            ypt = bT(self._y)
+
+            for y in ypt:
+                x = self.xp.copy().numpy(force=True)
+                y = ypt.copy().numpy(force=True)
+
+                coeffs, _ = scipy_curve_fit(self.fit_func, x, y)
+                print('coeffs: ', coeffs)
+                self._coefficients = coeffs
+
+            
+
+
+
+        return self._coefficients
+
+    def fit_func(x, aa, bb):
+        return aa * torch.exp(bb * x)
+
+
+    def forward(self, xnew: Tensor) -> Tensor:
+        # boundary condition of xnew
+        assert xnew.ge(self.xp[0]).all(), \
+            f'input should not be less than {self.xp[0]}'
+
+        ypt = bT(self.y)
+
+        coeffs = self.coefficients
+
+        result = aa*torch.exp(bb * xnew)
+        return bT(result)
+
+
+
