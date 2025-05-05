@@ -98,6 +98,7 @@ def plot_dos(targets,
     ref_hl_plot = targets['homo_lumos']
     ref_ev_plot = targets['eigenvalues']
     ref_fermi_plot = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
+    print('ref fermi:', ref_fermi_plot)
     ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
     ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, training_globals['dos_sigma'])
     ref_dos_mean_plot = ref_dos_plot.mean(dim=0)
@@ -109,6 +110,7 @@ def plot_dos(targets,
     energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
     hl_dftb = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
     fermi_dftb = hl_dftb.mean(-1).unsqueeze(-1)
+    print('fermi_dftb: ', fermi_dftb)
     eigval_dftb = dftb_calculator.eig_values.detach() / energy_units['ev']
     dos_dftb = dos((eigval_dftb), energies_plot, training_globals['dos_sigma'])
     dos_dftb_mean = dos_dftb.mean(dim=0)
@@ -120,7 +122,7 @@ def plot_dos(targets,
                      ref_dos_mean_plot + ref_dos_std_plot,
                      ref_dos_mean_plot - ref_dos_std_plot,
                      alpha=0.5)
-    plt.plot((ref_energies_plot - fermi_dftb)[0], dos_dftb_mean, '-', label=labels[1])
+    plt.plot((energies_plot - fermi_dftb)[0], dos_dftb_mean, '-', label=labels[1])
     plt.fill_between((ref_energies_plot - fermi_dftb)[0],
                      dos_dftb_mean + dos_dftb_std,
                      dos_dftb_mean - dos_dftb_std,
@@ -159,6 +161,24 @@ def plot_training_ref(targets, training_size, points):
     plt.ylabel("DOS", fontsize=14)
     plt.show()
      
+def plot_interpolation(interpolator_o, interpolator, training_size, title):
+    x_o = interpolator_o.xp
+    y_o = interpolator_o.y
+    plt.plot(x_o, y_o, 'o', label='original')
+    print('x_o:', x_o.shape)
+     
+    x = torch.linspace(x_o[0], x_o[-1], 1000)
+    print('x:', x.shape)
+    y_inter_o = interpolator_o.forward(x)
+    plt.plot(x, y_inter_o, '-', label='interpolated')
+    plt.title(title)
+    plt.legend()
+
+    #y_inter = interpolator.forward(x_o)
+    #plt.plot(x_o, y_inter, '-', label='interpolated')
+
+    plt.show()
+
 
     
     

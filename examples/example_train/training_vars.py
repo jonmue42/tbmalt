@@ -2,9 +2,9 @@ import torch
 from tbmalt.data.units import energy_units, length_units
 
 training_globals = {
-        'learning_rate': 0.005,
-        #'learning_rate': 0.00005,
-        'number_of_epochs': 2,
+        #'learning_rate': 0.005,
+        'learning_rate': 0.00005,
+        'number_of_epochs': 10,
         'dos_sigma': 0.09,
         }
 
@@ -27,8 +27,6 @@ si32c31_hse_82_vars = {
         'dataset_path': './data_wenbo/dataset/fhi-aims_si32c31_hse_82.hdf',
         'parameter_db_path': './output.hdf5',
         }
-
-
 
 dataset_vars = {
         'si63v_hse_101': si63v_hse_101_vars,

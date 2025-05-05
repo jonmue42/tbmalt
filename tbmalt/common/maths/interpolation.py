@@ -780,7 +780,7 @@ class CubicSpline(Feed):
             result[extrapolate] = poly_to_zero(
                 dr, dx, 1.0 / dx, y2, y1p, y1pp)
 
-        print('Result CubicSpline: ', result)
+        #print('Result CubicSpline: ', result)
 
         return result
 

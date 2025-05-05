@@ -119,11 +119,11 @@ loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_funct
 
 # Define params to optimize (in this case H and S offsites)
 for key in h_feed._off_sites.keys():
-    h_feed._off_sites[key].coefficients.requires_grad_(True)
-    s_feed._off_sites[key].coefficients.requires_grad_(True)
+    h_feed._off_sites[key].y.requires_grad_(True)
+    s_feed._off_sites[key].y.requires_grad_(True)
 
-h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
-s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
+h_var = [val.y for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
+s_var = [val.y for key, val in s_feed._off_sites.items()]
 print('Svar')
 print(s_var)
 print(len(s_var))
@@ -250,7 +250,6 @@ with torch.no_grad():
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
-    
     for key, interpolator_o in h_feed_o._off_sites.items():
         plot_interpolation(interpolator_o, interpolator_o, training_size, 'Before training')
 
