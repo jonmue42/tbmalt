@@ -661,7 +661,6 @@ class CubicSpline(Feed):
         # coefficients values must now be recalculated so that they are consistent
         # with the updated y-knot values.
         if self._knots_were_changed or self._coefficients is None:
-
             ypt = bT(self._y)
 
             # get the first dim of x
@@ -983,41 +982,43 @@ class test_iter(Feed):
 
 
 
+class test_iter2(Feed):
+    """Cupic spline interpolator.
 
+    An entity for piecewise interpolation of data via a cupic polynomial
+    spline which is twice continuously differentiable.
 
+    Arguments:
+        x: A one dimensional tensor specifying the interpolation grid points,
+            i.e. the knot locations.
+        y: Interpolation values, i.e. the knot values, associated with each
+            grid point. For single series interpolation this should be an array
+            of length "n", where "n" is the number of grid points present in
+            ``x``. For batch interpolation this should be an "m" by "n"
+            tensor. Note that this must be a `Parameter` rather than `Tensor`
+            instance.
+        tail: Distance over which to smooth the tail.
 
+    Keyword Args:
+        coefficients: 0th, 1st, 2nd and 3rd order parameters in cubic spline.
 
+    References:
+        .. [csi_wiki] https://en.wikipedia.org/wiki/Spline_(mathematics)
 
+    Examples:
+        >>> from tbmalt.common.maths.interpolation import CubicSpline
+        >>> import torch
+        >>> from torch.nn import Parameter
+        >>> x = torch.linspace(1, 10, 10)
+        >>> y = Parameter(torch.sin(x), requires_grad=False)
+        >>> spline = CubicSpline(x, y)
+        >>> spline.forward(torch.tensor([3.5]))
+        #   tensor([-0.3526])
+        >>> torch.sin(torch.tensor([3.5]))
+        #   tensor([-0.3508])
 
+    """
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class ExponentialInter(Feed):
     def __init__(self, x: Tensor, y: Parameter, tail: Real = 1.0,
                  **kwargs):
         super().__init__()
@@ -1069,7 +1070,6 @@ class ExponentialInter(Feed):
         # manually.
         self._coefficients: Optional[Tensor] = None
         if "coefficients" in kwargs.keys():
-            print('test')
             warnings.warn(
                 "Manual specification of coefficients is deprecated.",
                 DeprecationWarning, stacklevel=2)
@@ -1087,6 +1087,7 @@ class ExponentialInter(Feed):
 
     @property
     def y(self) -> Parameter:
+        """Value of the spline at each grid point."""
         return self._y
 
     @y.setter
@@ -1101,38 +1102,46 @@ class ExponentialInter(Feed):
 
     @property
     def coefficients(self):
+        """The spline coefficients."""
         if self._coefficients is None:
             ypt = bT(self._y)
+            x = self.xp
+
+            coefficients = torch.empty((0, 6), device=self.xp.device)
 
             for y in ypt:
-                x = self.xp.copy().numpy(force=True)
-                y = ypt.copy().numpy(force=True)
+                y = y
+                A = torch.stack([torch.ones_like(x) * torch.exp(-x),
+                                 x * torch.exp(-x),
+                                 x**2 * torch.exp(-x),
+                                 x**3 * torch.exp(-x),
+                                 x**4 * torch.exp(-x),
+                                 x**5 * torch.exp(-x) ], dim=1)
+                coeffs = torch.linalg.lstsq(A, y).solution
+                coefficients = torch.vstack((coefficients, coeffs))
+                plt.plot(x, y, 'k-')
+                plt.plot(x, self.fit_func(x, *coeffs), 'r-')
+                plt.show()
 
-                coeffs, _ = scipy_curve_fit(self.fit_func, x, y)
-                print('coeffs: ', coeffs)
-                self._coefficients = coeffs
 
-            
-
-
+            self._coefficients = coefficients
 
         return self._coefficients
 
-    def fit_func(x, aa, bb):
-        return aa * torch.exp(bb * x)
-
+    @staticmethod
+    def fit_func(x, aa, bb, cc, dd, ee, ff):
+        return (aa + bb * x + cc * x**2 + dd * x**3 + ee * x**4 + ff* x**5) * torch.exp(-x)
 
     def forward(self, xnew: Tensor) -> Tensor:
-        # boundary condition of xnew
-        assert xnew.ge(self.xp[0]).all(), \
-            f'input should not be less than {self.xp[0]}'
+        aa = self.coefficients[:, [0]]
+        bb = self.coefficients[:, [1]]
+        cc = self.coefficients[:, [2]]
+        dd = self.coefficients[:, [3]]
+        ee = self.coefficients[:, [4]]
+        ff = self.coefficients[:, [5]]
 
-        ypt = bT(self.y)
+        result = self.fit_func(xnew, aa, bb, cc, dd, ee, ff)
 
-        coeffs = self.coefficients
-
-        result = aa*torch.exp(bb * xnew)
         return bT(result)
-
 
 

@@ -6,9 +6,10 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import re
+import pickle
 
 from tbmalt.physics.dftb.feeds import SkFeed, SkfOccupationFeed, HubbardFeed, RepulsiveSplineFeed
-from tbmalt.common.maths.interpolation import CubicSpline, ExponentialInter, test_iter
+from tbmalt.common.maths.interpolation import CubicSpline, test_iter, test_iter2
 from tbmalt.physics.dftb import Dftb2
 import tbmalt.common.maths as tbmalt_math
 from tbmalt.ml.loss_function import Loss, hellinger_loss
@@ -39,11 +40,11 @@ shell_dict = {14: [0, 1, 2]}
 species = [14] # Si, C
 
 # Feeds
-#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)#, requires_grad_offsite=True), requires_grad_onsite=True,)
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)#, requires_grad_offsite=True, requires_grad_onsite=True,)
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -124,26 +125,26 @@ for key in h_feed._off_sites.keys():
 
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
 s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
-print('Svar')
-print(s_var)
-print(len(s_var))
-print(s_var[0].size())
-print(s_var[1].size())
-print(s_var[2].size())
-print(s_var[3].size())
-print(s_var[4].size())
-print(s_var[5].size())
-print('Hvar')
-print(h_var)
-print(len(h_var))
-print(h_var[0].size())
-print(h_var[1].size())
-print(h_var[2].size())
-print(h_var[3].size())
-print(h_var[4].size())
-print(h_var[5].size())
-print('Hfeed offsite')
-print(h_feed._off_sites)
+#print('Svar')
+#print(s_var)
+#print(len(s_var))
+#print(s_var[0].size())
+#print(s_var[1].size())
+#print(s_var[2].size())
+#print(s_var[3].size())
+#print(s_var[4].size())
+#print(s_var[5].size())
+#print('Hvar')
+#print(h_var)
+#print(len(h_var))
+#print(h_var[0].size())
+#print(h_var[1].size())
+#print(h_var[2].size())
+#print(h_var[3].size())
+#print(h_var[4].size())
+#print(h_var[5].size())
+#print('Hfeed offsite')
+#print(h_feed._off_sites)
 params = h_var + s_var
 
 # optimizer
@@ -211,6 +212,12 @@ for epoch in range(number_of_epochs):
 #        test_loop(dataloader_test, dftb_calculator)
 
 
+# Save new h_feed and s_feed as pickle
+with open('h_feed.pkl', 'wb') as f:
+    pickle.dump(h_feed, f)
+with open('s_feed.pkl', 'wb') as f:
+    pickle.dump(s_feed, f)
+
 #Plotting of result
 #---------------------------------------------------
 with torch.no_grad():
@@ -240,11 +247,11 @@ with torch.no_grad():
     kwargs['mix_params'] = mix_params
     dftb_calculator_o = Dftb2(h_feed_o, s_feed_o, o_feed, u_feed, suppress_scc_error=True, filling_scheme=None, filling_temp=None, **kwargs)
     
-    #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator_o, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
     # Prediction after training
     
-    #plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
+    plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
@@ -252,7 +259,7 @@ with torch.no_grad():
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     
     for key, interpolator_o in h_feed_o._off_sites.items():
-        plot_interpolation(interpolator_o, interpolator_o, training_size, 'Before training')
+        plot_interpolation(interpolator_o, 'Before training')
 
     for key, interpolator in h_feed._off_sites.items():
-        plot_interpolation(interpolator, interpolator, training_size, 'After training')
+        plot_interpolation(interpolator, 'After training')

@@ -4,7 +4,7 @@ from tbmalt.data.units import energy_units, length_units
 training_globals = {
         #'learning_rate': 0.005,
         'learning_rate': 0.00005,
-        'number_of_epochs': 10,
+        'number_of_epochs': 1,
         'dos_sigma': 0.09,
         }
 

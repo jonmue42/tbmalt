@@ -161,16 +161,16 @@ def plot_training_ref(targets, training_size, points):
     plt.ylabel("DOS", fontsize=14)
     plt.show()
      
-def plot_interpolation(interpolator_o, interpolator, training_size, title):
-    x_o = interpolator_o.xp
-    y_o = interpolator_o.y
+def plot_interpolation(interpolator, title):
+    x_o = interpolator.xp
+    y_o = interpolator.y
     plt.plot(x_o, y_o, 'o', label='original')
     print('x_o:', x_o.shape)
      
-    x = torch.linspace(x_o[0], x_o[-1], 1000)
+    x = torch.linspace(x_o[0], x_o[-1], 10000)
     print('x:', x.shape)
-    y_inter_o = interpolator_o.forward(x)
-    plt.plot(x, y_inter_o, '-', label='interpolated')
+    y_inter = interpolator.forward(x)
+    plt.plot(x, y_inter, '.-', label='interpolated')
     plt.title(title)
     plt.legend()
 
