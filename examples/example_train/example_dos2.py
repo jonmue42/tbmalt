@@ -40,11 +40,11 @@ shell_dict = {14: [0, 1, 2]}
 species = [14] # Si, C
 
 # Feeds
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)#, requires_grad_offsite=True), requires_grad_onsite=True,)
-#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)#, requires_grad_offsite=True, requires_grad_onsite=True,)
-#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -212,12 +212,6 @@ for epoch in range(number_of_epochs):
 #        test_loop(dataloader_test, dftb_calculator)
 
 
-# Save new h_feed and s_feed as pickle
-with open('h_feed.pkl', 'wb') as f:
-    pickle.dump(h_feed, f)
-with open('s_feed.pkl', 'wb') as f:
-    pickle.dump(s_feed, f)
-
 #Plotting of result
 #---------------------------------------------------
 with torch.no_grad():
@@ -259,7 +253,11 @@ with torch.no_grad():
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     
     for key, interpolator_o in h_feed_o._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
+            pickle.dump(interpolator_o, f)
         plot_interpolation(interpolator_o, 'Before training')
 
     for key, interpolator in h_feed._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
+            pickle.dump(interpolator, f)
         plot_interpolation(interpolator, 'After training')
