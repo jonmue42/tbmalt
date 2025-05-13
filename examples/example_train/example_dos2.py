@@ -260,4 +260,7 @@ with torch.no_grad():
     for key, interpolator in h_feed._off_sites.items():
         with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
             pickle.dump(interpolator, f)
+        #write coeffs to file
+        torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
+
         plot_interpolation(interpolator, 'After training')

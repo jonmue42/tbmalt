@@ -24,6 +24,8 @@ from plot_dos import plot_dos, plot_training_ref, plot_dos_test, plot_interpolat
 
 
 torch.set_default_dtype(torch.float64)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 # Define Calculation for homonuclear silicon
 #---------------------------------------------------
@@ -125,26 +127,6 @@ for key in h_feed._off_sites.keys():
 
 h_var = [val._y for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
 s_var = [val._y for key, val in s_feed._off_sites.items()]
-#print('Svar')
-#print(s_var)
-#print(len(s_var))
-#print(s_var[0].size())
-#print(s_var[1].size())
-#print(s_var[2].size())
-#print(s_var[3].size())
-#print(s_var[4].size())
-#print(s_var[5].size())
-#print('Hvar')
-#print(h_var)
-#print(len(h_var))
-#print(h_var[0].size())
-#print(h_var[1].size())
-#print(h_var[2].size())
-#print(h_var[3].size())
-#print(h_var[4].size())
-#print(h_var[5].size())
-#print('Hfeed offsite')
-#print(h_feed._off_sites)
 params = h_var + s_var
 
 # optimizer
@@ -210,10 +192,10 @@ number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-#    with torch.no_grad():
-#        test_loop(dataloader_test, dftb_calculator)
+    with torch.no_grad():
+        test_loop(dataloader_test, dftb_calculator)
 #Run train loop one last time without optimization to get last splines
-train_loop(dataloader_train, optimizer, dftb_calculator, opt=False)
+#train_loop(dataloader_train, optimizer, dftb_calculator, opt=False)
 
 #Plotting of result
 #---------------------------------------------------
@@ -251,9 +233,9 @@ with torch.no_grad():
     plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     for key, interpolator_o in h_feed_o._off_sites.items():
         plot_interpolation(interpolator_o, 'Before training')
 

@@ -9,7 +9,7 @@ import re
 import pickle
 
 from tbmalt.physics.dftb.feeds import SkFeed, SkfOccupationFeed, HubbardFeed, RepulsiveSplineFeed
-from tbmalt.common.maths.interpolation import CubicSpline, ExponentialInter, test_iter
+from tbmalt.common.maths.interpolation import CubicSpline,test_iter, test_iter2
 from tbmalt.physics.dftb import Dftb2
 import tbmalt.common.maths as tbmalt_math
 from tbmalt.ml.loss_function import Loss, hellinger_loss
@@ -27,7 +27,7 @@ torch.set_default_dtype(torch.float64)
 
 
 # Load (unpickle) the instance from the file
-with open("h_feed_o.pkl", "rb") as f:
+with open("interpolators/(14, 14, 0, 0)interpolator_hfeed.pkl", "rb") as f:
     h_feed = pickle.load(f)
 
 plot_interpolation(h_feed)

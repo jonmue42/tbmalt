@@ -162,14 +162,18 @@ def plot_training_ref(targets, training_size, points):
     plt.show()
      
 def plot_interpolation(interpolator, title):
-    x_o = interpolator.xp
-    y_o = interpolator.y
+    x_o = interpolator.xp.detach()
+    y_o = interpolator.y.detach()
     plt.plot(x_o, y_o, 'o', label='original')
     print('x_o:', x_o.shape)
+    #x_test = torch.linspace(0.8, 18, 87)
+    #plt.plot(x_test, y_o[:87], 'o', label='original_test')
+
      
     x = torch.linspace(x_o[0], x_o[-1], 10000)
+    #x = torch.linspace(0.8, 18, 10000)
     print('x:', x.shape)
-    y_inter = interpolator.forward(x)
+    y_inter = interpolator.forward(x).detach()
     plt.plot(x, y_inter, '.-', label='interpolated')
     plt.title(title)
     plt.legend()
