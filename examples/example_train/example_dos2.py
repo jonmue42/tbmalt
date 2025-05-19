@@ -40,15 +40,18 @@ shell_dict = {14: [0, 1, 2]}
 species = [14] # Si, C
 
 # Feeds
-#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)#, requires_grad_offsite=True), requires_grad_onsite=True,)
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)#, requires_grad_offsite=True, requires_grad_onsite=True,)
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
 u_feed = HubbardFeed.from_database(parameter_db_path, species)
+
+for key, interpolator_o in s_feed._off_sites.items():
+    plot_interpolation(interpolator_o, 'Before training')
 
 # Calculator
 mix_params = {'mix_param': 0.2, 
@@ -125,26 +128,7 @@ for key in h_feed._off_sites.keys():
 
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
 s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
-#print('Svar')
-#print(s_var)
-#print(len(s_var))
-#print(s_var[0].size())
-#print(s_var[1].size())
-#print(s_var[2].size())
-#print(s_var[3].size())
-#print(s_var[4].size())
-#print(s_var[5].size())
-#print('Hvar')
-#print(h_var)
-#print(len(h_var))
-#print(h_var[0].size())
-#print(h_var[1].size())
-#print(h_var[2].size())
-#print(h_var[3].size())
-#print(h_var[4].size())
-#print(h_var[5].size())
-#print('Hfeed offsite')
-#print(h_feed._off_sites)
+
 params = h_var + s_var
 
 # optimizer
@@ -218,10 +202,10 @@ with torch.no_grad():
     ##Reference
     
     ##Original DFTB calc
-    #h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)
-    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
-    #s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)
-    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
+    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)
+    #h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
+    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)
+    #s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
     
     geometry_o = Geometry(data_train['number'],
                           data_train['position'],
@@ -252,15 +236,15 @@ with torch.no_grad():
     
     #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     
-    for key, interpolator_o in h_feed_o._off_sites.items():
-        with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
-            pickle.dump(interpolator_o, f)
-        plot_interpolation(interpolator_o, 'Before training')
+   # for key, interpolator_o in h_feed_o._off_sites.items():
+   #     with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
+   #         pickle.dump(interpolator_o, f)
+   #     plot_interpolation(interpolator_o, 'Before training')
 
-    for key, interpolator in h_feed._off_sites.items():
-        with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
-            pickle.dump(interpolator, f)
-        #write coeffs to file
-        torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
+   # for key, interpolator in h_feed._off_sites.items():
+   #     with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
+   #         pickle.dump(interpolator, f)
+   #     #write coeffs to file
+   #     torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
 
-        plot_interpolation(interpolator, 'After training')
+   #     plot_interpolation(interpolator, 'After training')

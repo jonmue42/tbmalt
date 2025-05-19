@@ -170,7 +170,7 @@ def plot_interpolation(interpolator, title):
     #plt.plot(x_test, y_o[:87], 'o', label='original_test')
 
      
-    x = torch.linspace(x_o[0], x_o[-1], 10000)
+    x = torch.linspace(x_o[0], x_o[-1]+5, 10000)
     #x = torch.linspace(0.8, 18, 10000)
     print('x:', x.shape)
     y_inter = interpolator.forward(x).detach()

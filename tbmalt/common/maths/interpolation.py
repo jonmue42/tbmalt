@@ -933,22 +933,24 @@ class test_iter(Feed):
             #print('ypt: ', ypt)
             #print('ypt shape: ', ypt.shape)
 
-            coefficients = torch.empty((0, 3), device=self.xp.device)
+            coefficients = torch.empty((0, 5), device=self.xp.device)
+
+            start_mask = torch.gt(self.xp, 3.9)
             
-            for y_el in ypt:
-                x = self.xp.clone().numpy(force=True)
+            for y_el in ypt[..., start_mask]:
+                x = self.xp[..., start_mask].clone().numpy(force=True)
                 y = y_el.clone().numpy(force=True)
                 #print('x: ', x)
                 #print('y: ', y)
                 #print('x shape: ', x.shape)
                 #print('y shape: ', y.shape)
-                #coeffs, *pcov = scipy_curve_fit(self.fit_func_np, x, y,maxfev=1000000, p0=[y[0], 1, -1],ftol=1e-14, xtol=1e-14, gtol=1e-14)
+                coeffs, *pcov = scipy_curve_fit(self.fit_func_np, x, y,maxfev=1000000, p0=[y[0], 0, 0, 0, 0],ftol=1e-14, xtol=1e-14, gtol=1e-14)
                 #print('coeffs: ', coeffs)
-               # plt.plot(x, y, 'k-')
-               # plt.plot(x, self.fit_func_np(x, *coeffs), 'r-')
-               # plt.show()
-                #coefficients = torch.vstack((coefficients, torch.from_numpy(coeffs).clone()))
-                coefficients = torch.vstack((coefficients, torch.tensor([1.0, 1.0, -1.0])))
+                plt.plot(x, y, 'ko')
+                plt.plot(x, self.fit_func_np(x, *coeffs), 'r-')
+                plt.show()
+                coefficients = torch.vstack((coefficients, torch.from_numpy(coeffs).clone()))
+                #coefficients = torch.vstack((coefficients, torch.tensor([1.0, 1.0, -1.0])))
                 #print('coefficients: ', coefficients)
                 #print('coefficients shape: ', coefficients.shape)
                 #print('coeff 0:', coefficients[:, [0]])
@@ -961,28 +963,284 @@ class test_iter(Feed):
         return aa*np.exp(bb * x + cc * x**2 + dd * x**3 + ee * x**4)
 
     @staticmethod
-    def fit_func(x, aa, bb, cc):#, dd, ee):
-        return aa*torch.exp(bb * x + cc * x**2)# + dd * x**3 + ee * x**4)
+    def fit_func(x, aa, bb, cc, dd, ee):
+        return aa*torch.exp(bb * x + cc * x**2 + dd * x**3 + ee * x**4)
+    
+    @staticmethod
+    def fit_func_1st_deriv(x, aa, bb, cc, dd, ee):
+        return aa*torch.exp(bb * x + cc * x**2 + dd * x**3 + ee * x**4) * (bb + 2*cc*x + 3*dd*x**2 + 4*ee*x**3)
+
+
+    @staticmethod
+    def fit_func_2nd_deriv(x, aa, bb, cc, dd, ee):
+        return aa*torch.exp(bb * x + cc * x**2 + dd * x**3 + ee * x**4) * ( (bb + x*(2*cc + x * (3*dd + 4*ee*x)))**2 + 2*cc + 6*dd*x + 12*ee*x**2 )
 
     def forward(self, xnew: Tensor) -> Tensor:
         aa = self.coefficients[:, [0]]
         bb = self.coefficients[:, [1]]
         cc = self.coefficients[:, [2]]
-        #dd = self.coefficients[:, [3]]
-        #ee = self.coefficients[:, [4]]
-        #print('aa: ', aa)
-        #print('bb: ', bb)
-        #print('cc: ', cc)
-        #print('xnew: ', xnew)
+        dd = self.coefficients[:, [3]]
+        ee = self.coefficients[:, [4]]
 
-        result = self.fit_func(xnew, aa, bb, cc)#, dd, ee)
-        #print('result', bT(result))
+        #result = self.fit_func(xnew, aa, bb, cc, dd, ee)
 
-        return bT(result)
+        r_max = (self.xp[-1] + self.tail - self.grid_step)
+
+        interpolate = torch.logical_and(self.xp[0] <= xnew, xnew <= self.xp[-1])
+        extrapolate = torch.logical_and(self.xp[-1] < xnew, xnew <= r_max)
+        ypt = bT(self.y)
+
+        result = (
+            torch.zeros(xnew.shape, device=self._device)
+            if ypt.dim() == 1
+            else torch.zeros(xnew.shape[0], ypt.shape[0],
+                             device=self._device)
+        )
+
+        if interpolate.any():
+            result[interpolate] = bT(self.fit_func(xnew[interpolate], aa, bb, cc, dd, ee))
+
+        if extrapolate.any():
+            dr = xnew[extrapolate] - r_max
+            dr = dr.unsqueeze(-1) if ypt.dim() == 2 else dr
+
+            #y0, y1, y2 = self._y[-3:]
+            y2 = result[interpolate][-1]
+            #r1 = (y2 - y0) / (2.0 * self.grid_step)
+            #r2 = (y2 + y0 - 2.0 * y1) / self.grid_step ** 2
+
+            #dx1 = 1.0 / self.grid_step
+            #dd = (((y2 - y1) * dx1 - r1) * dx1 - 0.5 * r2) * dx1
+            #y1p = (3.0 * dd * self.grid_step + r2) * self.grid_step + r1
+            #y1pp = 6.0 * dd * self.grid_step + r2
+            y1p = bT(self.fit_func_1st_deriv(xnew[interpolate][-1], aa, bb, cc, dd, ee))[0]
+            y1pp = bT(self.fit_func_2nd_deriv(xnew[interpolate][-1], aa, bb, cc, dd, ee))[0]
+
+            dx = self.grid_step - self.tail
+
+            result[extrapolate] = poly_to_zero(
+                dr, dx, 1.0 / dx, y2, y1p, y1pp)
+
+        return result
 
 
 
 class test_iter2(Feed):
+    """Cupic spline interpolator.
+
+    An entity for piecewise interpolation of data via a cupic polynomial
+    spline which is twice continuously differentiable.
+
+    Arguments:
+        x: A one dimensional tensor specifying the interpolation grid points,
+            i.e. the knot locations.
+        y: Interpolation values, i.e. the knot values, associated with each
+            grid point. For single series interpolation this should be an array
+            of length "n", where "n" is the number of grid points present in
+            ``x``. For batch interpolation this should be an "m" by "n"
+            tensor. Note that this must be a `Parameter` rather than `Tensor`
+            instance.
+        tail: Distance over which to smooth the tail.
+
+    Keyword Args:
+        coefficients: 0th, 1st, 2nd and 3rd order parameters in cubic spline.
+
+    References:
+        .. [csi_wiki] https://en.wikipedia.org/wiki/Spline_(mathematics)
+
+    Examples:
+        >>> from tbmalt.common.maths.interpolation import CubicSpline
+        >>> import torch
+        >>> from torch.nn import Parameter
+        >>> x = torch.linspace(1, 10, 10)
+        >>> y = Parameter(torch.sin(x), requires_grad=False)
+        >>> spline = CubicSpline(x, y)
+        >>> spline.forward(torch.tensor([3.5]))
+        #   tensor([-0.3526])
+        >>> torch.sin(torch.tensor([3.5]))
+        #   tensor([-0.3508])
+
+    """
+
+    def __init__(self, x: Tensor, y: Parameter, tail: Real = 1.0,
+                 **kwargs):
+        super().__init__()
+
+        # X-knot values must be of an anticipated type
+        if not isinstance(x, Tensor) or isinstance(x, Parameter):
+            raise TypeError("The x-knot values must be a `torch.Tensor`"
+                            " instance.")
+
+        # Same for the y-knot values
+        if not isinstance(y, Parameter):
+            raise TypeError(
+                "The y-knot values must be a `torch.nn.Parameter` instance.")
+
+        assert y.dim() <= 2, '"CubicSpline" only support 1D or 2D interpolation'
+
+        # Ensure that there is not a mismatch between the number of x and y
+        # points supplied: one-dimensional case only.
+        if y.ndim == 1 and not (len(y) == len(x)):
+            raise ValueError(
+                "Mismatch detected in the number of supplied `x` "
+                f"({len(x)}) and `y` ({len(y)}) values."
+            )
+
+        # This is just a repeat of the above check but for the two-dimensional
+        # case.
+        elif y.ndim == 2 and y.shape[0] != len(x):
+            raise ValueError(
+                f"Array shape mismatch detected, anticipated a `y` array of "
+                f"the shape ({len(x)}, n), encountered {tuple(y.shape)} instead."
+            )
+
+        # Prevent users from unintentionally optimizing the knot locations.
+        if isinstance(x, Parameter) or x.requires_grad:
+            raise warnings.warn(
+                "Setting the knot positions 'x' as a freely tunable parameter"
+                " is strongly advised against as it may lead to instability or"
+                " incorrect behavior of the spline during optimisation."
+                " Please ensure that the `x` argument is a `torch.tensor`"
+                " type rather than a `torch.nn.Parameter` and that its"
+                "\"requires_grad\" attribute set to `False`.",
+                UserWarning, stacklevel=2)
+
+        self.xp = x
+        self._y = y
+
+        # Coefficients will be build when the `coefficients` property is
+        # first invoked. Unless the user has supplied the spline coefficients
+        # manually.
+        self._coefficients: Optional[Tensor] = None
+        if "coefficients" in kwargs.keys():
+            warnings.warn(
+                "Manual specification of coefficients is deprecated.",
+                DeprecationWarning, stacklevel=2)
+            self._coefficients: Optional[Tensor] = kwargs.get("coefficients")
+
+        self.grid_step = x[1] - x[0]
+        self.tail = tail
+
+        # Device type of the tensor in this class
+        self._device = x.device
+
+        # Store the version tracking information for the y-knot values so that
+        # the coefficients can be updated as and when needed.
+        self._y_version, self._y_id = None, None
+
+    @property
+    def y(self) -> Parameter:
+        """Value of the spline at each grid point."""
+        return self._y
+
+    @y.setter
+    def y(self, value: Parameter):
+        # Y-knot values must be of an anticipated type
+        if not isinstance(value, Parameter):
+            raise TypeError(
+                "y-knot values must be a `torch.nn.Parameter` instance.")
+
+        # Finally, set new y-knot value tensor.
+        self._y = value
+
+    @property
+    def coefficients(self):
+        """The spline coefficients."""
+        if self._coefficients is None:
+            ypt = bT(self._y)
+            x = self.xp
+
+            coefficients = torch.empty((0, 6), device=self.xp.device)
+
+            for y in ypt:
+                y = y
+                A = torch.stack([torch.ones_like(x) * torch.exp(-x),
+                                 x * torch.exp(-x),
+                                 x**2 * torch.exp(-x),
+                                 x**3 * torch.exp(-x),
+                                 x**4 * torch.exp(-x),
+                                 x**5 * torch.exp(-x) ], dim=1)
+                coeffs = torch.linalg.lstsq(A, y).solution
+                coefficients = torch.vstack((coefficients, coeffs))
+                plt.plot(x, y, 'ko')
+                plt.plot(x, self.fit_func(x, *coeffs), 'r-')
+                #plt.show()
+
+
+            self._coefficients = coefficients
+
+        return self._coefficients
+
+    @staticmethod
+    def fit_func(x, aa, bb, cc, dd, ee, ff):
+        return (aa + bb * x + cc * x**2 + dd * x**3 + ee * x**4 + ff* x**5) * torch.exp(-x)
+    @staticmethod
+    def fit_func_1st_deriv(x, aa, bb, cc, dd, ee, ff):
+        return - (aa - bb + (bb - 2 * cc) * x + (cc - 3*dd) * x**2 + (dd - 4*ee) * x**3 + (ee - 5*ff) * x**4 + ff * x**5) * torch.exp(-x)
+
+    @staticmethod
+    def fit_func_2nd_deriv(x, aa, bb, cc, dd, ee, ff):
+        return (aa - 2*bb + 2*cc + (bb - 4*cc + 6*dd) *x + (cc - 6*dd + 12 *ee)*x**2 + (dd- 8*ee +20*ff)*x**3 + (ee - 10*ff)*x**4 + ff*x**5 ) * torch.exp(-x)
+
+    def forward(self, xnew: Tensor) -> Tensor:
+        aa = self.coefficients[:, [0]]
+        bb = self.coefficients[:, [1]]
+        cc = self.coefficients[:, [2]]
+        dd = self.coefficients[:, [3]]
+        ee = self.coefficients[:, [4]]
+        ff = self.coefficients[:, [5]]
+
+        #result = self.fit_func(xnew, aa, bb, cc, dd, ee, ff)
+        r_max = (self.xp[-1] + self.tail - self.grid_step)
+
+        interpolate = torch.logical_and(self.xp[0] <= xnew, xnew <= self.xp[-1])
+        extrapolate = torch.logical_and(self.xp[-1] < xnew, xnew <= r_max)
+        ypt = bT(self.y)
+
+        result = (
+            torch.zeros(xnew.shape, device=self._device)
+            if ypt.dim() == 1
+            else torch.zeros(xnew.shape[0], ypt.shape[0],
+                             device=self._device)
+        )
+
+
+        if interpolate.any():
+            result[interpolate] = bT(self.fit_func(xnew[interpolate], aa, bb, cc, dd, ee, ff))
+
+        if extrapolate.any():
+            print('extrapolating')
+            dr = xnew[extrapolate] - r_max
+            dr = dr.unsqueeze(-1) if ypt.dim() == 2 else dr
+
+            #y0, y1, y2 = self._y[-3:]
+            #y2 = self.fit_func(xnew[interpolate][-1], aa, bb, cc, dd, ee, ff)
+            y2 = result[interpolate][-1]
+            #r1 = (y2 - y0) / (2.0 * self.grid_step)
+            #r2 = (y2 + y0 - 2.0 * y1) / self.grid_step ** 2
+
+            #dx1 = 1.0 / self.grid_step
+            #dd = (((y2 - y1) * dx1 - r1) * dx1 - 0.5 * r2) * dx1
+            #y1p = (3.0 * dd * self.grid_step + r2) * self.grid_step + r1
+            #print('y1p: ', y1p)
+            #y1pp = 6.0 * dd * self.grid_step + r2
+            #print('y1pp: ', y1pp)
+            y1p = bT(self.fit_func_1st_deriv(xnew[interpolate][-1], aa, bb, cc, dd, ee, ff))[0]
+            #print('test y1p: ', y1p)
+            y1pp = bT(self.fit_func_2nd_deriv(xnew[interpolate][-1], aa, bb, cc, dd, ee, ff))[0]
+            #print('test y1pp: ', y1pp)
+
+            dx = self.grid_step - self.tail
+
+            result[extrapolate] = poly_to_zero(
+                dr, dx, 1.0 / dx, y2, y1p, y1pp)
+
+
+        #return bT(result)
+        return result
+
+
+class LATTE_interpolator(Feed):
     """Cupic spline interpolator.
 
     An entity for piecewise interpolation of data via a cupic polynomial
@@ -1129,8 +1387,8 @@ class test_iter2(Feed):
         return self._coefficients
 
     @staticmethod
-    def fit_func(x, aa, bb, cc, dd, ee, ff):
-        return (aa + bb * x + cc * x**2 + dd * x**3 + ee * x**4 + ff* x**5) * torch.exp(-x)
+    def fit_func(x, aa, bb, cc, dd, ee):
+        return aa * torch.exp(x * (bb + x * (cc + x * (dd + x * ee))))
 
     def forward(self, xnew: Tensor) -> Tensor:
         aa = self.coefficients[:, [0]]
@@ -1138,10 +1396,10 @@ class test_iter2(Feed):
         cc = self.coefficients[:, [2]]
         dd = self.coefficients[:, [3]]
         ee = self.coefficients[:, [4]]
-        ff = self.coefficients[:, [5]]
 
-        result = self.fit_func(xnew, aa, bb, cc, dd, ee, ff)
+        result = self.fit_func(xnew, aa, bb, cc, dd, ee)
 
         return bT(result)
+
 
 
