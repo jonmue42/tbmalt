@@ -24,6 +24,8 @@ from plot_dos import plot_dos, plot_training_ref, plot_dos_test, plot_interpolat
 
 
 torch.set_default_dtype(torch.float64)
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
 
 # Define Calculation for homonuclear silicon
 #---------------------------------------------------
@@ -124,12 +126,16 @@ loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_funct
 # Define params to optimize (in this case H and S offsites)
 for key in h_feed._off_sites.keys():
     h_feed._off_sites[key].coefficients.requires_grad_(True)
-    s_feed._off_sites[key].coefficients.requires_grad_(True)
+    #s_feed._off_sites[key].coefficients.requires_grad_(True)
 
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
-s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
+#s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
+print("H var: ", h_var)
+print("min:", torch.min(torch.abs(h_var[0])))
+print("min:", torch.min(torch.abs(h_var[1])))
 
-params = h_var + s_var
+
+params = h_var #+ s_var
 
 # optimizer
 learning_rate = training_globals['learning_rate']
@@ -152,6 +158,10 @@ def train_loop(dataloader, optimizer, dftb_calculator):
                     units='a',
                     cutoff=dataset_vars[dataset_name]['cutoff']
                     )
+        #print("GEOMTETRY")
+        #print('atomic nums: ', data['number'])
+        #print('position: ', data['position'])
+        #print('latvec: ', data['latvec'])
         orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
 
         dftb_calculator(geometry, orbs, grad_mode='direct')
@@ -202,10 +212,10 @@ with torch.no_grad():
     ##Reference
     
     ##Original DFTB calc
-    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)
-    #h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
-    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)
-    #s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
+    #h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter2)
+    h_feed_o = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)
+    #s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter2)
+    s_feed_o = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)
     
     geometry_o = Geometry(data_train['number'],
                           data_train['position'],

@@ -2,11 +2,11 @@ import torch
 from tbmalt.data.units import energy_units, length_units
 
 training_globals = {
-        #'learning_rate': 0.005,
+        'learning_rate': 0.00005,
         #'learning_rate': 0.00005,
-        #'learning_rate': 5e-10,
-        'learning_rate': 0.0,
-        'number_of_epochs': 2,
+        #'learning_rate': 5e-6,
+        #'learning_rate': 0.0,
+        'number_of_epochs': 20,
         'dos_sigma': 0.09,
         }
 

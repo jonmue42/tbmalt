@@ -725,6 +725,10 @@ class CubicSpline(Feed):
 
         # Note here that the tail actually ends one grid point earlier
         r_max = (self.xp[-1] + self.tail - self.grid_step)
+        #print("r_max: ", r_max)
+        #print("xp: ", self.xp[-1])
+        #print("tail: ", self.tail)
+        #print("grid_step: ", self.grid_step)
 
         interpolate = torch.logical_and(self.xp[0] <= xnew, xnew <= self.xp[-1])
         extrapolate = torch.logical_and(self.xp[-1] < xnew, xnew <= r_max)
@@ -935,7 +939,7 @@ class test_iter(Feed):
 
             coefficients = torch.empty((0, 5), device=self.xp.device)
 
-            start_mask = torch.gt(self.xp, 3.9)
+            start_mask = torch.gt(self.xp, 4.0)
             
             for y_el in ypt[..., start_mask]:
                 x = self.xp[..., start_mask].clone().numpy(force=True)
@@ -944,11 +948,26 @@ class test_iter(Feed):
                 #print('y: ', y)
                 #print('x shape: ', x.shape)
                 #print('y shape: ', y.shape)
-                coeffs, *pcov = scipy_curve_fit(self.fit_func_np, x, y,maxfev=1000000, p0=[y[0], 0, 0, 0, 0],ftol=1e-14, xtol=1e-14, gtol=1e-14)
+                if y[0] >= 0.0:
+                    lower_bound = 0.0001
+                    higher_bound = np.inf
+                else:
+                    lower_bound = -np.inf
+                    higher_bound = -0.0001
+                #if y[0] == 0.03123299222567:
+                #    print('yes')
+                #    lower_bound = 0.0001
+                #else:
+                #    lower_bound = -np.inf
+
+                bounds = ([lower_bound, -np.inf, -np.inf, -np.inf, -np.inf],[higher_bound, np.inf, np.inf, np.inf, np.inf])
+                #print('y0: ', len(y[0]))
+
+                coeffs, *pcov = scipy_curve_fit(self.fit_func_np, x, y,maxfev=1000000, p0=[y[0], 0, 0, 0, 0], bounds=bounds, ftol=1e-14, xtol=1e-14, gtol=1e-14)
                 #print('coeffs: ', coeffs)
-                plt.plot(x, y, 'ko')
-                plt.plot(x, self.fit_func_np(x, *coeffs), 'r-')
-                plt.show()
+                #plt.plot(x, y, 'ko')
+                #plt.plot(x, self.fit_func_np(x, *coeffs), 'r-')
+                #plt.show()
                 coefficients = torch.vstack((coefficients, torch.from_numpy(coeffs).clone()))
                 #coefficients = torch.vstack((coefficients, torch.tensor([1.0, 1.0, -1.0])))
                 #print('coefficients: ', coefficients)
@@ -1151,6 +1170,8 @@ class test_iter2(Feed):
             x = self.xp
 
             coefficients = torch.empty((0, 6), device=self.xp.device)
+
+            start_mask = torch.gt(self.xp, 4.0)
 
             for y in ypt:
                 y = y

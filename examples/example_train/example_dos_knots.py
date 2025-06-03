@@ -122,7 +122,20 @@ loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_funct
 
 # Define params to optimize (in this case H and S offsites)
 for key in h_feed._off_sites.keys():
+    reduce = 5
+    #remove every 2nd element
+    h_feed._off_sites[key]._y = torch.nn.Parameter(h_feed._off_sites[key]._y[::reduce])
+    h_feed._off_sites[key].xp = h_feed._off_sites[key].xp[::reduce]
+    print('Number of elements in inter: ', len(h_feed._off_sites[key].xp))
+    h_feed._off_sites[key].grid_step = h_feed._off_sites[key].grid_step*reduce
+    #h_feed._off_sites[key].grid_step = h_feed._off_sites[key].xp[1] - h_feed._off_sites[key].xp[0]
+    h_feed._off_sites[key].tail = 2.0
     h_feed._off_sites[key]._y.requires_grad_(True)
+
+    s_feed._off_sites[key]._y = torch.nn.Parameter(s_feed._off_sites[key]._y[::reduce])
+    s_feed._off_sites[key].xp = s_feed._off_sites[key].xp[::reduce]
+    s_feed._off_sites[key].grid_step = s_feed._off_sites[key].grid_step*reduce
+    s_feed._off_sites[key].tail = 2.0
     s_feed._off_sites[key]._y.requires_grad_(True)
 
 h_var = [val._y for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
@@ -192,8 +205,8 @@ number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-    with torch.no_grad():
-        test_loop(dataloader_test, dftb_calculator)
+    #with torch.no_grad():
+    #    test_loop(dataloader_test, dftb_calculator)
 #Run train loop one last time without optimization to get last splines
 #train_loop(dataloader_train, optimizer, dftb_calculator, opt=False)
 
@@ -233,11 +246,18 @@ with torch.no_grad():
     plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
-    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
-    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+
     for key, interpolator_o in h_feed_o._off_sites.items():
-        plot_interpolation(interpolator_o, 'Before training')
+        plot_interpolation(interpolator_o, 'Before training H feed ' + key)
 
     for key, interpolator in h_feed._off_sites.items():
-        plot_interpolation(interpolator, 'After training')
+        plot_interpolation(interpolator, 'After training H feed ' + key)
+
+    for key, interpolator_o in s_feed_o._off_sites.items():
+        plot_interpolation(interpolator_o, 'Before training S feed ' + key)
+
+    for key, interpolator in s_feed._off_sites.items():
+        plot_interpolation(interpolator, 'After training S feed ' + key)
