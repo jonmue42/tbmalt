@@ -4,6 +4,7 @@ import numpy as np
 import torch
 
 from typing import Optional, Dict, Any, Literal, Union, Tuple
+import warnings
 
 from tbmalt.ml.module import Calculator
 from tbmalt.ml.integralfeeds import IntegralFeed
@@ -187,7 +188,8 @@ class Dftb1(Calculator):
         self.r_feed = r_feed
 
         device_list = [d.device for d in [h_feed, s_feed, o_feed, r_feed]
-                       if d is not None]
+                       if hasattr(d, "device") and d is not None]
+
         if not len(set(device_list)) == 1:
             raise ValueError('All `Feeds` must be on the same device')
 
@@ -425,6 +427,41 @@ class Dftb1(Calculator):
             forces: tensor reporting the force on each atom along each
                 dimension.
         """
+        # Current issue that need to be resolved:
+        #   - 1) This makes an explicit call to a private method of the
+        #       Hamiltonian and Overlap `Feed` objects. Specifically the
+        #       `SkFeed._off_site_blocks` as such this will break when
+        #       using a different feed object or working with periodic
+        #       systems. It also requires manually tweaking private methods of
+        #       the `SkFeed` class to adapt them for use in another private
+        #       method of a different unrelated class causing unintentional
+        #       coupling.
+        #   - 2) Given the cost of evaluating the forces, and to a lesser
+        #       extent the repulsive energy, it might be worth caching these
+        #       values after computing them.
+        #   - 3) Hard coding of gradients associated with the repulsive spline
+        #       feeds needs to be removed and replaced with a generic auto-grad
+        #       solution.
+        #   - 4) This is only compatible with the now deprecated
+        #       `RepulsiveSplineFeed` class.
+
+        from tbmalt.physics.dftb.feeds import SkFeed
+
+        warnings.warn(
+            "This is an experimental feature which is not intended for "
+            "public use!")
+
+        if not isinstance(self.h_feed, SkFeed) or not isinstance(
+                self.s_feed, SkFeed):
+            raise NotImplementedError(
+                "Manual evaluation of atomic forces is only supported when "
+                "using `SkFeed` instances for the Hamiltonian & overlap "
+                "matrix feeds; `h_feed` & `s_feed`.")
+
+        if self.geometry.is_periodic:
+            raise NotImplementedError(
+                "Manual evaluation of atomic forces is not compatible with "
+                "periodic systems.")
 
         # Compute atomic force component associated with the gradient of
         # the hamiltonian and overlap matrices.
@@ -759,7 +796,8 @@ class Dftb2(Calculator):
 
         device_list = [
             d.device for d in [h_feed, s_feed, o_feed, u_feed, r_feed]
-            if d is not None]
+            if hasattr(d, "device") and d is not None]
+
         if not len(set(device_list)) == 1:
             raise ValueError('All `Feeds` must be on the same device')
 
@@ -1072,9 +1110,56 @@ class Dftb2(Calculator):
             forces: tensor reporting the force on each atom along each
                 dimension.
         """
+        # Current issue that need to be resolved:
+        #   - 1) This uses a manual and hard coded method to compute the
+        #       gradients of the gamma matrix. This will fail if a gamma
+        #       scheme other than "exponential" is used. Considerations should
+        #       be made as to what the best way to deal with this is. If
+        #       PyTorch is able to safely compute the gradients then the
+        #       `gamma_exponential_gradient` method could be moved into
+        #       a unit-test and a more generic approach implemented here.
+        #   - 2) This makes an explicit call to a private method of the
+        #       Hamiltonian and Overlap `Feed` objects. Specifically the
+        #       `SkFeed._off_site_blocks` as such this will break when
+        #       using a different feed object or working with periodic
+        #       systems. It also requires manually tweaking private methods of
+        #       the `SkFeed` class to adapt them for use in another private
+        #       method of a different unrelated class causing unintentional
+        #       coupling.
+        #   - 3) Given the cost of evaluating the forces, and to a lesser
+        #       extent the repulsive energy, it might be worth caching these
+        #       values after computing them.
+        #   - 4) Hard coding of gradients associated with the repulsive spline
+        #       feeds needs to be removed and replaced with a generic auto-grad
+        #       solution.
+        #   - 5) This is only compatible with the now deprecated
+        #       `RepulsiveSplineFeed` class.
+
+        from tbmalt.physics.dftb.feeds import SkFeed
+
+        warnings.warn(
+            "This is an experimental feature which is not intended for "
+            "public use!")
+
+        if not isinstance(self.h_feed, SkFeed) or not isinstance(
+                self.s_feed, SkFeed):
+            raise NotImplementedError(
+                "Manual evaluation of atomic forces is only supported when "
+                "using `SkFeed` instances for the Hamiltonian & overlap "
+                "matrix feeds; `h_feed` & `s_feed`.")
+
+        if self.geometry.is_periodic:
+            raise NotImplementedError(
+                "Manual evaluation of atomic forces is not compatible with "
+                "periodic systems.")
+
+        if self.gamma_scheme != "exponential":
+            raise NotImplementedError(
+                "Manual evaluation of atomic forces is only compatible with "
+                "the exponential gamma scheme.")
 
         # Non-scc Forces and h1 correction
-        force = -self._finite_diff_overlap_h0_blocks(delta=delta)
+        force = -self._finite_diff_overlap_h_blocks(delta=delta)
 
         # Include contributions associated with the repulsive feed if
         # present.
@@ -1090,7 +1175,6 @@ class Dftb2(Calculator):
                     "feeds.")
 
         # Scc corrections (additional to h1)
-        
         # Gamma gradient correction
         gamma_grad = gamma_exponential_gradient(
             self.geometry, self.orbs, self.u_feed.forward(self.orbs))
@@ -1103,7 +1187,7 @@ class Dftb2(Calculator):
 
         return force
 
-    def _finite_diff_overlap_h0_blocks(self, delta: float = 1.0e-6) -> Tensor:
+    def _finite_diff_overlap_h_blocks(self, delta: float = 1.0e-6) -> Tensor:
         """Atomic forces based on the gradient of the S & H matrices.
 
         This method computes the atomic forces via a block-wise evaluation of
@@ -1250,7 +1334,7 @@ class Dftb2(Calculator):
             self, cache: Optional[Dict[str, Any]] = None,
             grad_mode: Literal["direct", "last_step", "implicit"] | str = "last_step",
             **kwargs
-            ) -> Tuple[Tensor, Tensor]:
+            ) -> Tensor:
         """Execute the SCC-DFTB calculation.
 
         Invoking this will trigger the execution of the self-consistent-charge
@@ -1271,9 +1355,11 @@ class Dftb2(Calculator):
                         run a single SCC step within the graph using the
                         converged charges as the initial "guess".
                     - "implicit": uses implicit function theorem to accurately
-                        and efficiently compute the derivative. This approach
-                        is not yet supported, but will be added in a future
-                        version.
+                        and memory efficiently compute the derivative.
+                        Uses the DFTB2 mixer except when provided custom mixer
+                        via 'implicit_mixer' keyword argument.
+                        Note: The mixer accuracy effects the gradient accuracy.
+                        
 
         Returns:
             total_energy: total energy for the target systems this will include
@@ -1316,9 +1402,16 @@ class Dftb2(Calculator):
         # perform the SCC cycle using a highly accurate initial guess for the
         # charges.
         elif grad_mode == "last_step":
+
+           # Calls to the necessary properties are made here so that they are
+            # computed within the graph.
+            self.overlap, self.core_hamiltonian, self.invr, self.gamma 
+            # q_zero_res is not cached and so is stored as a variable
+            q_zero_res = self.q_zero_res
+            
             with torch.no_grad():
                 q_out, *_ = Dftb2.scc_cycle(
-                    self.q_zero_res, self.orbs, self.core_hamiltonian,
+                    q_zero_res, self.orbs, self.core_hamiltonian,
                     self.overlap, self.gamma, **kwargs_in)
 
             (q_out, self.hamiltonian, self.eig_values, self.eig_vectors,
@@ -1329,8 +1422,41 @@ class Dftb2(Calculator):
         # The implicit method is yet to be implemented. This should give the
         # "correct" gradient and so will become the default one implemented.
         elif grad_mode == "implicit":
-            raise NotImplementedError(
-                "The \"implicit\" gradient mode has not been implemented yet")
+            # Use user defined mixer if provided, otherwise use same mixer as SCC
+            implicit_mixer = kwargs.get('implicit_mixer', self.mixer)
+
+            q_current = self.q_zero_res
+            if cache is not None:
+                q_current = cache.get('q_initial', q_current)
+
+            q_converged = torch.zeros_like(q_current)
+            self.overlap, self.core_hamiltonian, self.invr, self.gamma
+
+            with torch.no_grad():
+                q_converged, *_ = Dftb2.scc_cycle(
+                    self.q_zero_res, self.orbs, self.core_hamiltonian,
+                    self.overlap, self.gamma, **kwargs_in)
+            #reconnect q_out to the graph
+            q_converged, *_ = Dftb2.scc_step(
+                q_converged, self.q_zero_res, self.core_hamiltonian, self.overlap,
+                self.gamma, self.orbs, self.n_electrons, **kwargs_in)
+            #Set up imlicit func theorem
+            q0 = q_converged.clone().detach().requires_grad_()
+            f0, *_ = Dftb2.scc_step(
+                q0, self.q_zero_res, self.core_hamiltonian, self.overlap,
+                self.gamma, self.orbs, self.n_electrons, **kwargs_in)
+            def backward_hook(grad):
+                g = Dftb2._impl_solver(lambda y : torch.autograd.grad(f0, q0, y, retain_graph=True)[0] + grad,
+                               grad, params=(), mixer = implicit_mixer)
+                return g
+            # hook into q_out grad
+            q_converged.register_hook(backward_hook)
+
+            #Run scc again so other values are effected by new gradient
+            (q_out, self.hamiltonian, self.eig_values, self.eig_vectors,
+             self.rho) = Dftb2.scc_step(
+                q_converged, self.q_zero_res, self.core_hamiltonian, self.overlap,
+                self.gamma, self.orbs, self.n_electrons, **kwargs_in)
 
         else:
             raise ValueError(
@@ -1340,6 +1466,26 @@ class Dftb2(Calculator):
         # Calculate and return the total system energy, taking into account
         # the entropy term as and when necessary.
         return self.mermin_energy
+    
+    @staticmethod
+    def _impl_solver(fnc, grad_current, params = None, mixer = Anderson, max_iter = 200, suppress_SCF_error = False, **kwargs):
+        with torch.no_grad():
+            mixer.reset()
+            grad_converged = torch.zeros_like(grad_current)
+            for step in range(1, max_iter + 1):
+                grad_current = mixer(
+                        fnc(grad_current, *params),
+                        grad_current,
+                        )
+                if torch.all(mixer.converged):
+                    grad_converged[:] = grad_current[:]
+                    break
+            else:
+                if not suppress_SCF_error:
+                    raise RuntimeError("Implicit solver cycle did not converge.")
+    
+        return grad_converged
+
 
     def reset(self):
         """Reset all attributes and cached properties."""
@@ -1359,7 +1505,7 @@ class Dftb2(Calculator):
             q_in: Tensor, q_zero: Tensor, core_hamiltonian: Tensor,
             overlap: Tensor, gamma: Tensor, orbs: OrbitalInfo,
             n_electrons: float_like, filling_temp: float_like = 0.0,
-            filling_scheme: Scheme = fermi_smearing, **kwargs
+            filling_scheme: Optional[Scheme] = fermi_smearing, **kwargs
         ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
         """Perform a single self-consistent charge cycle step.
 
@@ -1430,12 +1576,25 @@ class Dftb2(Calculator):
             occupancy = aufbau_filling(eig_values, n_electrons,
                                        e_mask=e_mask) * scale_factor
 
-        # Scaled occupancy values
-        s_occs = torch.einsum(
-            '...i,...ji->...ji', torch.sqrt(occupancy), eig_vectors)
+        # The density matrix is constructed via a two-step approach, similar to
+        # that used in DFTB+. This is done to avoid gradient instabilities that
+        # arise as a result of taking the square root of zeros within the eigen
+        # vector scaling step. While an occupancy value of zero is valid, the
+        # derivative of square root is not. Thus, padding must be applied to these
+        # values during evaluation, and compensated for later on.
 
-        # Density matrix
-        rho = s_occs @ s_occs.transpose(-1, -2).conj()
+        # Somewhat arbitrary offset needed to ensure occupancies are non-zero
+        smallest_occupancy = torch.min(occupancy)
+        offset = smallest_occupancy - 0.1
+
+        # Scaled occupancy values (including offset)
+        s_occs = torch.einsum(
+            '...i,...ji->...ji', torch.sqrt(occupancy - offset), eig_vectors)
+
+        # First the density matrix without occupancy scaling is computed. This is
+        # then added to the scaled density matrix, which includes the offset.
+        rho = eig_vectors @ eig_vectors.transpose(-1, -2).conj()
+        rho = (s_occs @ s_occs.transpose(-1, -2).conj()) + offset * rho
 
         # Compute the new charges
         q_out = _mulliken(rho, overlap, orbs)
@@ -1544,7 +1703,6 @@ class Dftb2(Calculator):
         # either the maximum permitted number of iterations has been reached or
         # convergence has been archived.
         for step in range(1, max_scc_iter + 1):
-
             # Perform a single step of the SCC cycle to generate the new charges.
             # The SCC step function will also return other important properties
             # that were calculated during the step.
