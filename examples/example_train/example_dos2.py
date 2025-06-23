@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split
+from torch.profiler import profile, ProfilerActivity, schedule
 
 import h5py
 import numpy as np
@@ -42,11 +43,11 @@ shell_dict = {14: [0, 1, 2]}
 species = [14] # Si, C
 
 # Feeds
-h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)#, requires_grad_offsite=True), requires_grad_onsite=True,)
-#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+#h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=test_iter)#, requires_grad_offsite=True), requires_grad_onsite=True,)
+h_feed = SkFeed.from_database(parameter_db_path, species, 'hamiltonian', interpolation=CubicSpline)#, requires_grad_offsite=True), requires_grad_onsite=True,)
 
-s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)#, requires_grad_offsite=True, requires_grad_onsite=True,)
-#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+#s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=test_iter)#, requires_grad_offsite=True, requires_grad_onsite=True,)
+s_feed = SkFeed.from_database(parameter_db_path, species, 'overlap', interpolation=CubicSpline)#, requires_grad_offsite=True, requires_grad_onsite=True,)
 
 o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
@@ -126,16 +127,12 @@ loss_entity = Loss(prediction_data_delegate, reference_data_delegate, loss_funct
 # Define params to optimize (in this case H and S offsites)
 for key in h_feed._off_sites.keys():
     h_feed._off_sites[key].coefficients.requires_grad_(True)
-    #s_feed._off_sites[key].coefficients.requires_grad_(True)
+    s_feed._off_sites[key].coefficients.requires_grad_(True)
 
 h_var = [val.coefficients for key, val in h_feed._off_sites.items()] #man kann auch nur ueber values laufen
-#s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
-print("H var: ", h_var)
-print("min:", torch.min(torch.abs(h_var[0])))
-print("min:", torch.min(torch.abs(h_var[1])))
+s_var = [val.coefficients for key, val in s_feed._off_sites.items()]
 
-
-params = h_var #+ s_var
+params = h_var + s_var
 
 # optimizer
 learning_rate = training_globals['learning_rate']
@@ -143,6 +140,7 @@ optimizer = torch.optim.Adam(params=params, lr=learning_rate)
 
 # Training
 #--------------------------------------------------
+activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
 loss_list = []
 def train_loop(dataloader, optimizer, dftb_calculator):
     _loss = 0
@@ -165,6 +163,12 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
 
         dftb_calculator(geometry, orbs, grad_mode='direct')
+        #with profile(activities=activities, profile_memory=True, record_shapes=True, with_stack=True) as prof:
+        #    dftb_calculator(geometry, orbs, grad_mode='direct')
+       # print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
+        #prof.export_memory_timeline('mem_direct.html')
+       # #print(prof.key_averages().table(sort_by="self_cuda_memory_usage", row_limit=10))
+       # prof.export_chrome_trace("trace.json")
 
         loss, _ = loss_entity(dftb_calculator, targets, batch_size=batch_size_train)
         _loss = _loss + loss
@@ -202,9 +206,11 @@ number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-#    with torch.no_grad():
-#        test_loop(dataloader_test, dftb_calculator)
+    with torch.no_grad():
+        test_loop(dataloader_test, dftb_calculator)
 
+# Save losses to npz file
+np.savez('losses.npz', train_loss=np.array(loss_list), test_loss=np.array(test_loss_list))
 
 #Plotting of result
 #---------------------------------------------------
@@ -242,19 +248,30 @@ with torch.no_grad():
     plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
     
-   # for key, interpolator_o in h_feed_o._off_sites.items():
-   #     with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
-   #         pickle.dump(interpolator_o, f)
-   #     plot_interpolation(interpolator_o, 'Before training')
+    for key, interpolator_o in s_feed_o._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_sfeed_o.pkl', 'wb') as f:
+            pickle.dump(interpolator_o, f)
+        plot_interpolation(interpolator_o, 'Overlap Interpolation Before Training ' + key)
+ 
+    for key, interpolator_o in h_feed_o._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
+            pickle.dump(interpolator_o, f)
+        plot_interpolation(interpolator_o, 'Hamiltonian Interpolation Before Training ' + key)
 
-   # for key, interpolator in h_feed._off_sites.items():
-   #     with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
-   #         pickle.dump(interpolator, f)
-   #     #write coeffs to file
-   #     torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
+    for key, interpolator in s_feed._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_sfeed.pkl', 'wb') as f:
+            pickle.dump(interpolator, f)
+        #write coeffs to file
+        torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_sfeed.pt')
+        plot_interpolation(interpolator, 'Overlap Interpolation After Training ' + key)
 
-   #     plot_interpolation(interpolator, 'After training')
+    for key, interpolator in h_feed._off_sites.items():
+        with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
+            pickle.dump(interpolator, f)
+        #write coeffs to file
+        torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
+        plot_interpolation(interpolator, 'Hamiltonian Interpolation After Training ' + key)

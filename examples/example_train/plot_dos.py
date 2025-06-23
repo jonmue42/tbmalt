@@ -79,10 +79,19 @@ def plot_dos_test(dataloader,
     plt.ylabel('DOS [states / eV]', fontsize=15)
     plt.title(title, fontsize=13)
     plt.legend(fontsize=13)
-    plt.show()
-
-
- 
+    plt.savefig('./plots/plot_img/dosplot_test_' + title + '.pdf', bbox_inches='tight')
+    plt.clf()
+    np.savez('./plots/plot_data/dosplot_test_' + title + '.npz',
+             energies_plot=energies_plot.numpy(),
+             fermi_ref_tot=fermi_ref_tot.numpy(),
+             dos_ref_tot=dos_ref_tot.numpy(),
+             fermi_dftb_tot=fermi_dftb_tot.numpy(),
+             dos_dftb_tot=dos_dftb_tot.numpy(),
+             dos_ref_mean=dos_ref_mean.numpy(),
+             dos_ref_std=dos_ref_std.numpy(),
+             dos_dftb_mean=dos_dftb_mean.numpy(),
+             dos_dftb_std=dos_dftb_std.numpy(),
+             )
 
 def plot_dos(targets,
              training_size,
@@ -98,7 +107,6 @@ def plot_dos(targets,
     ref_hl_plot = targets['homo_lumos']
     ref_ev_plot = targets['eigenvalues']
     ref_fermi_plot = targets['homo_lumos'].mean(dim=-1).unsqueeze(-1)
-    print('ref fermi:', ref_fermi_plot)
     ref_energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
     ref_dos_plot = dos((ref_ev_plot), ref_energies_plot, training_globals['dos_sigma'])
     ref_dos_mean_plot = ref_dos_plot.mean(dim=0)
@@ -110,7 +118,6 @@ def plot_dos(targets,
     energies_plot = torch.linspace(-18, 5, 500).repeat(training_size, 1)
     hl_dftb = getattr(dftb_calculator, 'homo_lumo').detach() / energy_units['ev']
     fermi_dftb = hl_dftb.mean(-1).unsqueeze(-1)
-    print('fermi_dftb: ', fermi_dftb)
     eigval_dftb = dftb_calculator.eig_values.detach() / energy_units['ev']
     dos_dftb = dos((eigval_dftb), energies_plot, training_globals['dos_sigma'])
     dos_dftb_mean = dos_dftb.mean(dim=0)
@@ -135,7 +142,22 @@ def plot_dos(targets,
     plt.ylabel('DOS [states / eV]', fontsize=15)
     plt.title(title, fontsize=13)
     plt.legend(fontsize=13)
-    plt.show()
+    plt.savefig('./plots/plot_img/dosplot_' + title + '.pdf', bbox_inches='tight')
+    plt.clf()
+    np.savez('./plots/plot_data/dosplot_' + title + '.npz', 
+             ref_hl_plot = ref_hl_plot.numpy(),
+             ref_ev_plot = ref_ev_plot.numpy(),
+             ref_fermi_plot = ref_fermi_plot.numpy(),
+             ref_energies_plot = ref_energies_plot.numpy(),
+             ref_dos_mean_plot = ref_dos_mean_plot.numpy(),
+             ref_dos_std_plot = ref_dos_std_plot.numpy(),
+             hl_dftb = hl_dftb.numpy(),
+             eigval_dftb = eigval_dftb.numpy(),
+             fermi_dftb = fermi_dftb.numpy(),
+             energies_plot = energies_plot.numpy(),
+             dos_dftb_mean = dos_dftb_mean.numpy(),
+             dos_dftb_std = dos_dftb_std.numpy(),
+             ) 
 
 def plot_training_ref(targets, training_size, points):
     #Reference
@@ -159,9 +181,26 @@ def plot_training_ref(targets, training_size, points):
     #plt.ylim((-1, 70))
     plt.xlabel(r'E - $\mathregular{E_f}$ [eV]', fontsize=14)
     plt.ylabel("DOS", fontsize=14)
-    plt.show()
+    plt.savefig('./plots/plot_img/training_ref.pdf', bbox_inches='tight')
+    plt.clf()
+    np.savez('./plots/plot_data/training_ref.npz',
+             ref_ev_plot =ref_ev_plot.numpy(),
+             ref_fermi_plot = ref_fermi_plot.numpy(),
+             ref_energies_plot = ref_energies_plot.numpy(),
+             ref_dos_plot = ref_dos_plot.numpy(),
+             ref_dos_mean_plot = ref_dos_mean_plot.numpy(),
+             ref_dos_std_plot = ref_dos_std_plot.numpy(),
+             )
      
 def plot_interpolation(interpolator, title):
+    plt.rcParams["figure.figsize"] = (16,9)
+    plt.rcParams.update({'font.size': 18})
+    plt.rcParams['axes.linewidth'] = 2
+    plt.rcParams['xtick.major.size'] = 10
+    plt.rcParams['xtick.major.width'] = 2
+    plt.rcParams['ytick.major.size'] = 10
+    plt.rcParams['ytick.major.width'] = 2
+    
     x_o = interpolator.xp.detach()
     y_o = interpolator.y.detach()
     plt.plot(x_o, y_o, 'o', label='original')
@@ -177,11 +216,19 @@ def plot_interpolation(interpolator, title):
     plt.plot(x, y_inter, '.-', label='interpolated')
     plt.title(title)
     plt.legend()
+    #plt.legend(fontsize=16)
 
     #y_inter = interpolator.forward(x_o)
     #plt.plot(x_o, y_inter, '-', label='interpolated')
+    plt.savefig('./plots/plot_img/interpolation_' + title + '.pdf', bbox_inches='tight')
+    plt.clf()
+    np.savez('./plots/plot_data/interpolation_' + title + '.npz',
+             x_o=x_o.numpy(),
+             y_o=y_o.numpy(),
+             x=x.numpy(),
+             y_inter=y_inter.numpy()
+             )
 
-    plt.show()
 
 
     

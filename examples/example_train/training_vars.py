@@ -6,18 +6,18 @@ training_globals = {
         #'learning_rate': 0.00005,
         #'learning_rate': 5e-6,
         #'learning_rate': 0.0,
-        'number_of_epochs': 20,
+        'number_of_epochs': 1,
         'dos_sigma': 0.09,
         }
 
 si63v_hse_101_vars = {
         'batch_size_train': 1,
         'batch_size_test': 1,
-        'training_split': [5, 5, 101-10], #training, testing, throwaway
+        'training_split': [2, 1, 101-3], #training, testing, throwaway
         'points': torch.linspace(-3.0, 2.0, 501),
         'cutoff': torch.tensor([18.0])/length_units['angstrom'],
         'dataset_path': './data_wenbo/dataset/fhi-aims_si63v_hse_101.hdf',
-        'parameter_db_path': './data _tbmaltpaper/siband.hdf5',
+        'parameter_db_path': './data_tbmaltpaper/siband.hdf5',
         }
 
 si32c31_hse_82_vars = {
