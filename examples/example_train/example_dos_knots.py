@@ -1,12 +1,13 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, random_split
+from torch.profiler import profile, ProfilerActivity, schedule
 
 import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 import re
-import copy
+import pickle
 
 from tbmalt.physics.dftb.feeds import SkFeed, SkfOccupationFeed, HubbardFeed, RepulsiveSplineFeed
 from tbmalt.common.maths.interpolation import CubicSpline, test_iter
@@ -205,10 +206,14 @@ number_of_epochs = training_globals['number_of_epochs']
 for epoch in range(number_of_epochs):
     print(f"Epoch {epoch+1}/{number_of_epochs}")
     train_loop(dataloader_train, optimizer, dftb_calculator)
-    #with torch.no_grad():
-    #    test_loop(dataloader_test, dftb_calculator)
+    with torch.no_grad():
+        test_loop(dataloader_test, dftb_calculator)
 #Run train loop one last time without optimization to get last splines
 #train_loop(dataloader_train, optimizer, dftb_calculator, opt=False)
+
+# Save losses to npz file
+np.savez('losses.npz', train_loss=np.array(loss_list), test_loss=np.array(test_loss_list))
+
 
 #Plotting of result
 #---------------------------------------------------
@@ -246,18 +251,42 @@ with torch.no_grad():
     plot_dos(targets, training_size, geometry_o, orbs_o, dftb_calculator, points, labels=('DFT', 'spline'), title='After training')
     
     # Plot test set
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator_o, shell_dict, points, labels=('DFT', 'siband-1-1'), title='Before training')
     
-    #plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
-
-    for key, interpolator_o in h_feed_o._off_sites.items():
-        plot_interpolation(interpolator_o, 'Before training H feed ' + key)
-
-    for key, interpolator in h_feed._off_sites.items():
-        plot_interpolation(interpolator, 'After training H feed ' + key)
+    plot_dos_test(dataloader_test, test_size, batch_size_test, dftb_calculator, shell_dict, points, labels=('DFT', 'spline'), title='After training')
 
     for key, interpolator_o in s_feed_o._off_sites.items():
-        plot_interpolation(interpolator_o, 'Before training S feed ' + key)
-
+         with open('interpolators/' + key + 'interpolator_sfeed_o.pkl', 'wb') as f:
+             pickle.dump(interpolator_o, f)
+         plot_interpolation(interpolator_o, 'Overlap Interpolation Before Training ' + key)
+    
+    for key, interpolator_o in h_feed_o._off_sites.items():
+         with open('interpolators/' + key + 'interpolator_hfeed_o.pkl', 'wb') as f:
+             pickle.dump(interpolator_o, f)
+         plot_interpolation(interpolator_o, 'Hamiltonian Interpolation Before Training ' + key)
+    
     for key, interpolator in s_feed._off_sites.items():
-        plot_interpolation(interpolator, 'After training S feed ' + key)
+         with open('interpolators/' + key + 'interpolator_sfeed.pkl', 'wb') as f:
+             pickle.dump(interpolator, f)
+         #write coeffs to file
+         torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_sfeed.pt')
+         torch.save(interpolator._y, 'knots/' + key + 'y_sfeed.pt')
+         torch.save(interpolator.xp, 'knots/' + key + 'xp_sfeed.pt')
+         torch.save(interpolator.grid_step, 'knots/' + key + 'grid_step_sfeed.pt')
+         torch.save(interpolator.tail, 'knots/' + key + 'tail_sfeed.pt')
+         plot_interpolation(interpolator, 'Overlap Interpolation After Training ' + key)
+    
+    for key, interpolator in h_feed._off_sites.items():
+         with open('interpolators/' + key + 'interpolator_hfeed.pkl', 'wb') as f:
+             pickle.dump(interpolator, f)
+         #write coeffs to file
+         torch.save(interpolator.coefficients, 'coeffs/' + key + 'coeffs_hfeed.pt')
+         torch.save(interpolator._y, 'knots/' + key + 'y_hfeed.pt')
+         torch.save(interpolator.xp, 'knots/' + key + 'xp_hfeed.pt')
+         torch.save(interpolator.grid_step, 'knots/' + key + 'grid_step_hfeed.pt')
+         torch.save(interpolator.tail, 'knots/' + key + 'tail_hfeed.pt')
+         plot_interpolation(interpolator, 'Hamiltonian Interpolation After Training ' + key)
+
+
+
+

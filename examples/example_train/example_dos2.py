@@ -53,9 +53,6 @@ o_feed = SkfOccupationFeed.from_database(parameter_db_path, species)
 
 u_feed = HubbardFeed.from_database(parameter_db_path, species)
 
-for key, interpolator_o in s_feed._off_sites.items():
-    plot_interpolation(interpolator_o, 'Before training')
-
 # Calculator
 mix_params = {'mix_param': 0.2, 
               'init_mix_param': 0.2,
