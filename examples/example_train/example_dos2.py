@@ -160,6 +160,7 @@ def train_loop(dataloader, optimizer, dftb_calculator):
         orbs = OrbitalInfo(geometry.atomic_numbers, shell_dict, shell_resolved=False)
 
         dftb_calculator(geometry, orbs, grad_mode='direct')
+        #dftb_calculator(geometry, orbs, grad_mode='implicit')
         #with profile(activities=activities, profile_memory=True, record_shapes=True, with_stack=True) as prof:
         #    dftb_calculator(geometry, orbs, grad_mode='direct')
        # print(prof.key_averages().table(sort_by="self_cpu_memory_usage", row_limit=10))
